@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+:root {
+  /* Pexeta blue and orange (matches pexeta.in) */
+  --navy: #0b2a4a;
+  --navy-2: #123a63;
+  --ink: #1e293b;
+  --muted: #4b5a6b;
+  --faint: #94a3b8;
+  --amber: #f2871e;
+  --amber-dark: #c4650f;
+  --blue: #1d6fb8;
+  --ice: #f7fafc;
+  --ice-dim: #eef2f7;
+  --line: #dce3ec;
+}
+
+@theme inline {
+  --color-navy: var(--navy);
+  --color-navy-2: var(--navy-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-amber: var(--amber);
+  --color-amber-dark: var(--amber-dark);
+  --color-brand: var(--blue);
+  --color-ice: var(--ice);
+  --color-ice-dim: var(--ice-dim);
+  --color-line: var(--line);
+  --font-heading: var(--font-jakarta);
+  --font-body: var(--font-inter);
+}
+
+body {
+  background: var(--ice);
+  color: var(--ink);
+  font-family: var(--font-body), Inter, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-heading), "Plus Jakarta Sans", sans-serif;
+  letter-spacing: -0.015em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Shared form controls */
+.field {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+.field:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgb(29 111 184 / 0.12); }
+.label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--muted); margin-bottom: 0.35rem; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  border-radius: 0.5rem; padding: 0.55rem 0.95rem; font-size: 0.875rem; font-weight: 600;
+  transition: background-color 120ms, color 120ms;
+}
+.btn-primary { background: var(--amber); color: var(--navy); }
+.btn-primary:hover { background: var(--amber-dark); color: #fff; }
+.btn-dark { background: var(--navy); color: #fff; }
+.btn-dark:hover { background: var(--navy-2); }
+.btn-outline { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+.btn-outline:hover { background: var(--ice-dim); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 0.75rem; }
+.eyebrow { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+/* Dashboard tables */
+.tbl { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.tbl th { text-align: left; font-weight: 600; font-size: 0.7rem; color: var(--muted); padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--line); background: var(--ice); white-space: nowrap; position: sticky; top: 0; }
+.tbl td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--ice-dim); vertical-align: top; }
+.tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl tr:hover td { background: #fbfcfe; }
+.tbl tfoot td { font-weight: 700; border-top: 1px solid var(--line); background: var(--ice); }
+.pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 0.1rem 0.55rem; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
