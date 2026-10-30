@@ -45,3 +45,13 @@ export function presets(latest: string) {
     { label: "Last month", from: `${prevEnd.slice(0, 8)}01`, to: prevEnd },
   ];
 }
+
+/** Date range for a brand: defaults to the month of the latest data across its marketplaces. */
+export async function getBrandPeriod(accountIds: string[], sp: { from?: string; to?: string }): Promise<Period> {
+  const dates = (await Promise.all(accountIds.map(latestDataDate))).filter(Boolean) as string[];
+  const latest = dates.sort().pop() ?? null;
+  let to = sp.to && ISO.test(sp.to) ? sp.to : latest ?? todayIst();
+  let from = sp.from && ISO.test(sp.from) ? sp.from : `${to.slice(0, 8)}01`;
+  if (from > to) [from, to] = [to, from];
+  return { from, to, days: dayDiff(from, to), latest };
+}

@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { BadgeIndianRupee, BarChart3, Boxes, Building2, FileText, Gauge, Megaphone, Menu, Tags, Upload, Users, Wallet, X, LogOut, KeyRound } from "lucide-react";
+import { BadgeIndianRupee, BarChart3, Boxes, Building2, FileText, Gauge, LayoutGrid, Megaphone, Menu, Store, Tags, Upload, Users, Wallet, X, LogOut, KeyRound } from "lucide-react";
 import Logo from "./Logo";
 
-type Props = { name: string; team: boolean; accounts: { id: string; name: string; marketplace: string }[] };
+type Props = { name: string; team: boolean; accounts: { id: string; name: string; marketplace: string; client_id: string; client_name: string }[] };
 
 // FirstCry pays a fixed base cost per unit (no fee lines or ads data), so its tabs differ from Amazon's.
 const FIRSTCRY_TABS = [
@@ -34,6 +34,9 @@ export default function Sidebar({ name, team, accounts }: Props) {
   const [open, setOpen] = useState(false);
   const current = path.match(/^\/a\/([0-9a-f-]{36})/i)?.[1] ?? (accounts.length === 1 ? accounts[0].id : null);
   const account = accounts.find((a) => a.id === current);
+  // The brand in view: from /b/<client> or the open marketplace account; a seller has only one brand.
+  const brandId = path.match(/^\/b\/([0-9a-f-]{36})/i)?.[1] ?? account?.client_id ?? (!team ? accounts[0]?.client_id : undefined);
+  const brandAccounts = accounts.filter((a) => a.client_id === brandId);
   // Keep the chosen dates when moving between tabs.
   const range = sp.get("from") && sp.get("to") ? `?from=${sp.get("from")}&to=${sp.get("to")}` : "";
 
@@ -54,22 +57,25 @@ export default function Sidebar({ name, team, accounts }: Props) {
       <div className="flex-1 space-y-1 overflow-y-auto px-3">
         {team && item("/accounts", "Brands", Building2, path === "/accounts")}
         {team && item("/team/sellers", "Seller logins", Users, path.startsWith("/team/sellers"))}
-        {account && (
+        {brandId && brandAccounts.length > 0 && (
           <>
-            <div className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{account.name}</div>
-            {(account.marketplace === "FirstCry" ? FIRSTCRY_TABS : TABS).map((t) => {
-              const href = `/a/${account.id}${t.slug ? `/${t.slug}` : ""}`;
-              const active = t.slug ? path.startsWith(href) : path === href;
-              return item(`${href}${t.slug === "costs" || t.slug === "gst" ? "" : range}`, t.label, t.icon, active);
-            })}
-            {team && item(`/a/${account.id}/uploads`, "Upload reports", Upload, path.startsWith(`/a/${account.id}/uploads`))}
+            <div className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{brandAccounts[0].client_name}</div>
+            {item(`/b/${brandId}${range}`, "All marketplaces", LayoutGrid, path === `/b/${brandId}`)}
+            {brandAccounts.map((a) => (
+              <div key={a.id}>
+                {item(`/a/${a.id}${range}`, a.marketplace || a.name, Store, a.id === account?.id && path === `/a/${a.id}`)}
+                {a.id === account?.id && (
+                  <div className="ml-5 space-y-0.5 border-l border-white/10 pl-2">
+                    {(a.marketplace === "FirstCry" ? FIRSTCRY_TABS : TABS).filter((t) => t.slug).map((t) => {
+                      const href = `/a/${a.id}/${t.slug}`;
+                      return item(`${href}${t.slug === "costs" || t.slug === "gst" ? "" : range}`, t.label, t.icon, path.startsWith(href));
+                    })}
+                    {team && item(`/a/${a.id}/uploads`, "Upload reports", Upload, path.startsWith(`/a/${a.id}/uploads`))}
+                  </div>
+                )}
+              </div>
+            ))}
           </>
-        )}
-        {!team && accounts.length > 1 && (
-          <div className="px-3 pt-4">
-            <div className="pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Your accounts</div>
-            {accounts.map((a) => <Link key={a.id} href={`/a/${a.id}`} className="block py-1 text-sm text-slate-300 hover:text-white">{a.name}</Link>)}
-          </div>
         )}
       </div>
       <div className="border-t border-white/10 px-5 py-4">

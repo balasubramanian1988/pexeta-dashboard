@@ -6,6 +6,8 @@ import { computeProfit } from "./engine/profit";
 import { computeStock } from "./engine/stock";
 import type { AccountDefaults, AdRow, InventoryRow, ListingRow, ProductRow, ProductSetting, SbPurchaseRow, SkuRow, TxnRow } from "./engine/types";
 import type { Account } from "./auth";
+import type { Finding, MarketSummary } from "./engine/brand";
+import { dailyNetSales } from "./engine/summaries";
 import { computeFcStock, computeFirstCry, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
 import { addDays } from "./period";
 
@@ -134,4 +136,56 @@ export const getFcStock = cache(async (account: Account, from: string, to: strin
   const units = new Map<string, number>();
   for (const s of sales) if (s.quantity > 0) units.set(s.product_id, (units.get(s.product_id) ?? 0) + s.quantity);
   return computeFcStock({ unitsById: units, periodDays: days, products: master.products, settings: master.settings, defaults: defaultsOf(account) });
+});
+
+// ---------- One brand across marketplaces ----------
+
+const SUPPORTED = new Set(["Amazon", "FirstCry"]);
+
+async function summarise(account: Account, from: string, to: string, prevFrom: string, prevTo: string): Promise<{ s: MarketSummary; extra: Finding[] }> {
+  const base = { accountId: account.id, marketplace: account.marketplace, notes: [] as string[], daily: new Map<string, number>() };
+  const empty: MarketSummary = { ...base, supported: SUPPORTED.has(account.marketplace), hasData: false, sales: 0, units: 0, returnRate: null, fees: 0, ads: null, productCost: 0, profit: 0, margin: 0, prevSales: null, lossProducts: 0 };
+  if (account.marketplace === "Amazon") {
+    const [{ result, txns }, prev] = await Promise.all([getProfit(account, from, to), getProfit(account, prevFrom, prevTo)]);
+    if (!txns.length) return { s: empty, extra: [] };
+    const t = result.totals;
+    // Account-level charges (e.g. ads on products with no sales, storage) belong to the marketplace too.
+    const profit = result.profitAfterAccountLevel;
+    return {
+      s: {
+        ...empty, hasData: true, sales: t.netSales, units: t.units, returnRate: t.unitsSold ? t.unitsRefunded / t.unitsSold : null,
+        fees: t.fees, ads: t.ads, productCost: t.productCost, profit, margin: t.netSales ? profit / t.netSales : 0,
+        prevSales: prev.txns.length ? prev.result.totals.netSales : null,
+        daily: new Map(dailyNetSales(txns, from, to).map((d) => [d.date, d.value])),
+        lossProducts: result.rows.filter((r) => r.profit < 0).length,
+      },
+      extra: [],
+    };
+  }
+  if (account.marketplace === "FirstCry") {
+    const [cur, prev] = await Promise.all([getFirstCry(account, from, to), getFirstCry(account, prevFrom, prevTo)]);
+    if (!cur.hasSales && !cur.hasRecon) return { s: empty, extra: [] };
+    const t = cur.result.totals;
+    const extra: Finding[] = [];
+    if (t.shortfall > 0) extra.push({ tone: "bad", title: `FirstCry paid about ₹${Math.round(t.shortfall).toLocaleString("en-IN")} less than its usual rate`, detail: `On ${cur.result.rows.filter((r) => r.shortfall > 0).length} product(s) whose GST rate changed but base cost did not. See FirstCry › Payments.` });
+    return {
+      s: {
+        ...empty, hasData: true, sales: t.salesExGst, units: t.units - t.rtoUnits - t.returnUnits,
+        returnRate: t.shippedUnits ? (t.rtoUnits + t.returnUnits) / t.shippedUnits : null,
+        fees: t.salesExGst - t.revenue, ads: null, productCost: t.productCost, profit: t.profit, margin: t.margin,
+        prevSales: prev.hasSales || prev.hasRecon ? prev.result.totals.salesExGst : null,
+        daily: new Map(cur.result.daily.map((d) => [d.date, d.sales])),
+        lossProducts: cur.result.rows.filter((r) => r.profit < 0).length,
+        notes: ["Sales at MRP excl. GST: FirstCry's files show no customer price.", ...(t.revenueEstimated ? ["Includes orders not yet invoiced, estimated."] : [])],
+      },
+      extra,
+    };
+  }
+  return { s: { ...empty, notes: ["Reports from this marketplace are not read by the dashboard yet."] }, extra: [] };
+}
+
+export const getBrand = cache(async (accounts: Account[], from: string, to: string, days: number) => {
+  const prevTo = addDays(from, -1), prevFrom = addDays(prevTo, -(days - 1));
+  const res = await Promise.all(accounts.map((a) => summarise(a, from, to, prevFrom, prevTo)));
+  return { markets: res.map((r) => r.s), extra: res.flatMap((r) => r.extra), prevFrom, prevTo };
 });

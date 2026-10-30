@@ -22,7 +22,7 @@ export default async function FcOverview({ account, period, team }: FcPageProps)
         <>
           <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
             <KpiRupees label="Revenue from FirstCry (excl. GST)" value={t.revenue} sub={t.revenueEstimated ? `incl. ${compactRupees(t.revenueEstimated)} estimated` : "all from FirstCry's files"} />
-            <KpiRupees label="Net profit" value={t.profit} signed sub={`${percent(t.margin)} margin`} />
+            <KpiRupees label="Net profit" value={t.profit} signed sub={`${percent(t.margin)} of sales at MRP excl. GST`} />
             <Kpi label="Units ordered" value={count(t.units)} sub={`${compactRupees(t.mrpValue)} at MRP`} />
             <Kpi label="Usual payout rate" value={result.typicalRate != null ? percent(result.typicalRate, 2) : "–"} sub="base cost ÷ MRP excl. GST" />
             <Kpi label="Not delivered (RTO)" value={percent(t.rtoRate)} sub={`${count(t.rtoUnits)} of ${count(t.shippedUnits)} units shipped`} tone={t.rtoRate > 0.08 ? "bad" : undefined} />

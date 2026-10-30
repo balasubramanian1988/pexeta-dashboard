@@ -9,6 +9,8 @@
 //                       + estimated base cost for ordered units not yet in a Vendor Reconciliation file
 //   product cost        = units not returned to origin × (cost per unit, or cost % × MRP)
 //   profit              = revenue − product cost       (no FirstCry ads data yet)
+//   margin              = profit ÷ sales, where sales = MRP excl. GST of units not returned (FirstCry's files have no
+//                         customer price), so margins compare with Amazon's profit ÷ net sales.
 import type { AccountDefaults, ProductSetting } from "./types";
 
 export type FcSaleRow = { poid: string; product_id: string; order_date: string; quantity: number; mrp: number; mrp_sales: number };
@@ -38,6 +40,7 @@ export type FcProductRow = {
   keptUnits: number;        // not returned to origin
   rtoUnits: number; returnUnits: number; shippedUnits: number;
   mrpValue: number;
+  salesExGst: number;       // MRP excl. GST of units not returned: the sales figure margins are measured on
   revenue: number; revenueEstimated: number;
   productCost: number; costPerUnit: number;
   profit: number; margin: number;
@@ -50,6 +53,7 @@ export type FcResult = {
   rows: FcProductRow[];
   totals: {
     units: number; mrpValue: number;
+    salesExGst: number;          // MRP excl. GST of units not returned (FirstCry's files show no customer price)
     revenue: number; revenueActual: number; revenueEstimated: number; estimatedUnits: number;
     productCost: number; profit: number; margin: number;
     shippedUnits: number; rtoUnits: number; returnUnits: number; rtoRate: number; returnRate: number;
@@ -57,7 +61,7 @@ export type FcResult = {
   };
   status: Record<UnitStatus, { units: number; amount: number }>;   // amount incl. GST (estimated for not_invoiced)
   advices: { advice: string; units: number; amount: number }[];
-  daily: { date: string; revenue: number; units: number }[];
+  daily: { date: string; revenue: number; units: number; sales: number }[];
   typicalRate: number | null;
   missingRate: string[];        // products with sales but no payout history to estimate from
 };
@@ -105,13 +109,13 @@ export function computeFirstCry(args: {
   const acc = new Map<string, Acc>();
   const get = (id: string) => {
     let a = acc.get(id);
-    if (!a) { a = { id, units: 0, keptUnits: 0, rtoUnits: 0, returnUnits: 0, shippedUnits: 0, mrpValue: 0, revenue: 0, revenueEstimated: 0, productCost: 0, shortfall: 0, payoutUnits: 0, baseKept: 0, exGstKept: 0, lastMrp: 0 }; acc.set(id, a); }
+    if (!a) { a = { id, units: 0, keptUnits: 0, rtoUnits: 0, returnUnits: 0, shippedUnits: 0, mrpValue: 0, revenue: 0, revenueEstimated: 0, productCost: 0, shortfall: 0, payoutUnits: 0, salesExGst: 0, baseKept: 0, exGstKept: 0, lastMrp: 0 }; acc.set(id, a); }
     return a;
   };
   const status = Object.fromEntries(Object.keys(UNIT_STATUS_LABEL).map((k) => [k, { units: 0, amount: 0 }])) as FcResult["status"];
   const advices = new Map<string, { units: number; amount: number }>();
-  const daily = new Map<string, { revenue: number; units: number }>();
-  const day = (d: string) => { let x = daily.get(d); if (!x) { x = { revenue: 0, units: 0 }; daily.set(d, x); } return x; };
+  const daily = new Map<string, { revenue: number; units: number; sales: number }>();
+  const day = (d: string) => { let x = daily.get(d); if (!x) { x = { revenue: 0, units: 0, sales: 0 }; daily.set(d, x); } return x; };
 
   // Invoiced units (Vendor Reconciliation).
   const invoicedByKey = new Map<string, number>();
@@ -128,6 +132,8 @@ export function computeFirstCry(args: {
     a.productCost += kept * unitCost(r.product_id, r.mrp);
     if (r.rto_qty === 0 && r.sr_qty === 0) { a.baseKept += r.gross_amount; a.exGstKept += exGst(r.mrp, r.gst_rate) * r.quantity; a.payoutUnits += r.quantity; }
     const d = day(r.order_date); d.revenue += revenue; d.units += r.quantity;
+    const netUnits = r.quantity - r.rto_qty - r.sr_qty;
+    if (netUnits > 0) { const v = exGst(r.mrp, r.gst_rate) * netUnits; d.sales += v; a.salesExGst += v; }
 
     const st: UnitStatus = r.rto_qty > 0 ? "rto" : r.sr_qty > 0 ? "customer_return" : r.payment_advice ? "paid" : r.delivery_date ? "awaiting_payment" : "in_transit";
     status[st].units += r.quantity;
@@ -159,6 +165,7 @@ export function computeFirstCry(args: {
     estimatedUnits += open;
     status.not_invoiced.units += open; status.not_invoiced.amount += base * open * (1 + gst / 100);
     const d = day(s.date); d.revenue += base * open; d.units += open;
+    const v = exGst(s.mrp, gst) * open; d.sales += v; a.salesExGst += v;
   }
 
   const rows: FcProductRow[] = [...acc.values()].map((a) => {
@@ -169,23 +176,23 @@ export function computeFirstCry(args: {
     return {
       id: a.id, name: p?.short_name || p?.title || `FirstCry ${a.id}`, styleCode: p?.style_code || "",
       units: a.units, keptUnits: a.keptUnits, rtoUnits: a.rtoUnits, returnUnits: a.returnUnits, shippedUnits: a.shippedUnits,
-      mrpValue: a.mrpValue, revenue: a.revenue, revenueEstimated: a.revenueEstimated,
+      mrpValue: a.mrpValue, salesExGst: a.salesExGst, revenue: a.revenue, revenueEstimated: a.revenueEstimated,
       productCost: a.productCost, costPerUnit: unitCost(a.id, a.lastMrp || p?.mrp || 0),
-      profit, margin: a.revenue ? profit / a.revenue : 0, payoutRate, shortfall, payoutUnits: a.payoutUnits,
+      profit, margin: a.salesExGst ? profit / a.salesExGst : 0, payoutRate, shortfall, payoutUnits: a.payoutUnits,
     };
   }).sort((x, y) => y.revenue - x.revenue);
 
   const t = rows.reduce((s, r) => ({
-    units: s.units + r.units, mrpValue: s.mrpValue + r.mrpValue, revenue: s.revenue + r.revenue, revenueEstimated: s.revenueEstimated + r.revenueEstimated,
+    units: s.units + r.units, mrpValue: s.mrpValue + r.mrpValue, salesExGst: s.salesExGst + r.salesExGst, revenue: s.revenue + r.revenue, revenueEstimated: s.revenueEstimated + r.revenueEstimated,
     productCost: s.productCost + r.productCost, shippedUnits: s.shippedUnits + r.shippedUnits, rtoUnits: s.rtoUnits + r.rtoUnits,
     returnUnits: s.returnUnits + r.returnUnits, shortfall: s.shortfall + r.shortfall,
-  }), { units: 0, mrpValue: 0, revenue: 0, revenueEstimated: 0, productCost: 0, shippedUnits: 0, rtoUnits: 0, returnUnits: 0, shortfall: 0 });
+  }), { units: 0, mrpValue: 0, salesExGst: 0, revenue: 0, revenueEstimated: 0, productCost: 0, shippedUnits: 0, rtoUnits: 0, returnUnits: 0, shortfall: 0 });
   const profit = t.revenue - t.productCost;
 
   return {
     rows,
     totals: {
-      ...t, revenueActual: t.revenue - t.revenueEstimated, estimatedUnits, profit, margin: t.revenue ? profit / t.revenue : 0,
+      ...t, revenueActual: t.revenue - t.revenueEstimated, estimatedUnits, profit, margin: t.salesExGst ? profit / t.salesExGst : 0,
       rtoRate: t.shippedUnits ? t.rtoUnits / t.shippedUnits : 0, returnRate: t.shippedUnits ? t.returnUnits / t.shippedUnits : 0,
     },
     status,

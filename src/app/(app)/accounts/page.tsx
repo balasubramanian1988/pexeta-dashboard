@@ -47,7 +47,8 @@ export default async function AccountsPage() {
         const canAdd = marketList.filter((m) => !have.has(m.id));
         const shown = b.rows.filter((r) => r.active).length;
         return (
-          <Section key={b.id} title={b.name} sub={`${shown} marketplace${shown === 1 ? "" : "s"} on the dashboard`}>
+          <Section key={b.id} title={b.name} sub={`${shown} marketplace${shown === 1 ? "" : "s"} on the dashboard`}
+            action={shown > 0 ? <Link href={`/b/${b.id}`} className="btn btn-primary !py-1.5 !text-xs">All marketplaces dashboard</Link> : undefined}>
             <table className="tbl">
               <thead><tr><th>Marketplace</th><th>Seller ID</th><th>Data up to</th><th>On dashboard</th><th></th></tr></thead>
               <tbody>

@@ -65,12 +65,28 @@ export const getAccount = cache(async (accountId: string): Promise<Account> => {
 });
 
 /** Accounts the viewer may see, for navigation. */
-export async function listAccounts(): Promise<{ id: string; name: string; client_id: string; marketplace: string }[]> {
+export async function listAccounts(): Promise<{ id: string; name: string; client_id: string; client_name: string; marketplace: string }[]> {
   const v = await getViewer();
   const supabase = await createClient();
-  let q = supabase.from("sd_accounts").select("id, name, client_id, marketplaces(name)").eq("active", true).order("name");
+  let q = supabase.from("sd_accounts").select("id, name, client_id, clients(name), marketplaces(name)").eq("active", true).order("name");
   if (v.kind === "seller") q = q.eq("client_id", v.clientId);
   const { data } = await q;
   const one = (x: unknown) => (Array.isArray(x) ? x[0] : x) as { name?: string } | null;
-  return (data ?? []).map((a) => ({ id: a.id, name: a.name, client_id: a.client_id, marketplace: one(a.marketplaces)?.name ?? "" }));
+  return (data ?? []).map((a) => ({ id: a.id, name: a.name, client_id: a.client_id, client_name: one(a.clients)?.name ?? "", marketplace: one(a.marketplaces)?.name ?? "" }));
 }
+
+const MARKET_ORDER = ["Amazon", "Flipkart", "Myntra", "FirstCry", "Blinkit", "Zepto", "Swiggy Instamart", "BigBasket"];
+
+/** A brand's active marketplace accounts the viewer may see (404 otherwise), in a fixed marketplace order. */
+export const getBrandAccounts = cache(async (clientId: string): Promise<{ clientName: string; accounts: Account[] }> => {
+  const v = await getViewer();
+  if (!/^[0-9a-f-]{36}$/i.test(clientId)) notFound();
+  if (v.kind === "seller" && v.clientId !== clientId) notFound();
+  const supabase = await createClient();
+  const { data } = await supabase.from("sd_accounts").select("id").eq("client_id", clientId).eq("active", true);
+  if (!data?.length) notFound();
+  const accounts = await Promise.all(data.map((a) => getAccount(a.id)));
+  const rank = (m: string) => { const i = MARKET_ORDER.indexOf(m); return i < 0 ? 99 : i; };
+  accounts.sort((a, b) => rank(a.marketplace) - rank(b.marketplace) || a.marketplace.localeCompare(b.marketplace));
+  return { clientName: accounts[0].client_name, accounts };
+});
