@@ -82,7 +82,7 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
   return (
     <>
       <PageHeader eyebrow={`${clientName} · All marketplaces`} title="How the brand is doing"
-        sub={<><PeriodNote from={period.from} to={period.to} />, compared with {dateLabel(prevFrom)} to {dateLabel(prevTo)}. Sales exclude GST. Amazon is by settlement date, FirstCry by order date.</>}
+        sub={<><PeriodNote from={period.from} to={period.to} />, compared with {dateLabel(prevFrom)} to {dateLabel(prevTo)}. Sales exclude GST. Amazon is by settlement date; FirstCry and Myntra by order date. Growth is shown only where uploads cover the whole previous period.</>}
         action={<PeriodPicker period={period} basePath={`/b/${clientId}`} />} />
 
       {!live.length ? <div className="card"><Empty>No marketplace data for these dates yet.{viewer.kind === "team" ? " Upload reports from each marketplace account." : ""}</Empty></div> : (
@@ -91,7 +91,7 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
             <div className="card px-4 py-3.5">
               <div className="text-xs font-medium text-muted">Net sales (excl. GST)</div>
               <div className="tabular mt-1 text-xl font-bold text-navy">{compactRupees(t.sales)}</div>
-              <div className={`mt-0.5 text-xs ${t.change == null ? "text-faint" : t.change >= 0 ? "text-emerald-700" : "text-red-700"}`}>{t.change == null ? "no previous period" : `${t.change >= 0 ? "▲" : "▼"} ${percent(Math.abs(t.change), 0)} vs previous`}</div>
+              <div className={`mt-0.5 text-xs ${t.change == null ? "text-faint" : t.change >= 0 ? "text-emerald-700" : "text-red-700"}`}>{t.change == null ? "no full previous period uploaded" : `${t.change >= 0 ? "▲" : "▼"} ${percent(Math.abs(t.change), 0)} vs previous`}</div>
               <SplitBar parts={split((m) => m.sales)} />
             </div>
             <div className="card px-4 py-3.5">

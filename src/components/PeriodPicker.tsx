@@ -18,7 +18,8 @@ export default function PeriodPicker({ period, basePath }: { period: Period; bas
           );
         })}
       </div>
-      <form action={basePath} className="flex items-center gap-1.5 text-xs">
+      {/* Keyed by the range so the date boxes update when the period changes without a full page load. */}
+      <form key={`${period.from}|${period.to}`} action={basePath} className="flex items-center gap-1.5 text-xs">
         <input type="date" name="from" defaultValue={period.from} className="field !w-auto !py-1 !text-xs" aria-label="From" />
         <span className="text-muted">to</span>
         <input type="date" name="to" defaultValue={period.to} className="field !w-auto !py-1 !text-xs" aria-label="To" />

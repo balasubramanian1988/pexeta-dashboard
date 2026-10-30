@@ -10,7 +10,7 @@ import { computeMyntra, type MyAdStyleRow, type MyDeductionRow, type MyInvoiceRo
 import type { Finding, MarketSummary } from "./engine/brand";
 import { dailyNetSales } from "./engine/summaries";
 import { computeFcStock, computeFirstCry, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
-import { addDays } from "./period";
+import { addDays, earliestDataDate } from "./period";
 
 type Sb = Awaited<ReturnType<typeof createClient>>;
 type Res<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
@@ -205,7 +205,12 @@ async function summarise(account: Account, from: string, to: string, prevFrom: s
 
 export const getBrand = cache(async (accounts: Account[], from: string, to: string, days: number) => {
   const prevTo = addDays(from, -1), prevFrom = addDays(prevTo, -(days - 1));
-  const res = await Promise.all(accounts.map((a) => summarise(a, from, to, prevFrom, prevTo)));
+  const res = await Promise.all(accounts.map(async (a) => {
+    const [r, earliest] = await Promise.all([summarise(a, from, to, prevFrom, prevTo), earliestDataDate(a.id)]);
+    // Only compare with the previous period when uploads cover all of it; a part-covered period makes growth look huge.
+    if (!earliest || earliest > prevFrom) r.s.prevSales = null;
+    return r;
+  }));
   return { markets: res.map((r) => r.s), extra: res.flatMap((r) => r.extra), prevFrom, prevTo };
 });
 
