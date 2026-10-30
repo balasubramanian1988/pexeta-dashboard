@@ -1,6 +1,6 @@
 # Pexeta Seller Dashboard
 
-`dashboard.pexeta.in`: profit, revenue, ads, a 45-day stock plan and GST documents for Pexeta's marketplace sellers. Amazon.in and FirstCry are live (pilot: Root and Soil); Flipkart, Myntra and quick commerce next.
+`dashboard.pexeta.in`: profit, revenue, ads, a 45-day stock plan and GST documents for Pexeta's marketplace sellers. Amazon.in, FirstCry and Myntra are live (pilot: Root and Soil); Flipkart and quick commerce next.
 
 Each brand is opted into the marketplaces it sells on (**Brands** page); each marketplace is one account with its own tabs.
 
@@ -41,9 +41,26 @@ Tabs: Overview, Profitability, Orders & returns, Payments, 45-day stock plan, Pr
 
 Overlapping downloads never double count: sales and returns are keyed by order + product, reconciliation by PO item + unit, and a later file never blanks an invoice, payment advice or return recorded earlier.
 
+## Myntra (PPMP marketplace, seller ships)
+
+Customer price (MRP − seller discount) − Myntra's margin ("GT charges") = seller product amount (the seller's invoice). Myntra then deducts commission (0–4.72% incl. GST) and a fixed fee with shipping, plus TCS and TDS (tax credits, not costs). Customer returns take back the sale and add return shipping; RTOs carry no charges. Ads come on monthly "Marketing Claim" invoices.
+
+- Sales (excl. GST) = customer price ÷ (1 + GST); revenue = seller product amount ÷ (1 + GST); fees = (commission + shipping) ÷ 1.18.
+- Profit = revenue − fees − product cost − ads (each month's ads invoice spread over its days).
+- Orders not yet in a settlement file are estimated from the orders report and the product's latest fees.
+
+| Report (Myntra Partner Portal) | How often | Range |
+| --- | --- | --- |
+| MDirect Orders report (CSV) | Daily | Last 7 days |
+| Settlement report (`SellerYearMonthWeekKey…xlsx`, settled and unsettled) | Weekly | Current and previous month |
+| MDirect Returns report (CSV) | Weekly | Last 30 days |
+| Tax invoices (PDF): Marketing Claim (ads), commission, logistics, MDirect | Monthly | |
+
+Upload CSVs as downloaded: re-saving in Excel turns order IDs into numbers like `1.00366E+11`.
+
 ## Setup (once)
 
-1. **Supabase** (the Pexeta Ops project): SQL editor → run `supabase/schema.sql` (existing installs: run `002_brand_marketplaces.sql` and `003_firstcry.sql` instead). It runs after the ops schema and is safe to run again. It creates the `sd_` tables, row-level security, the private `sd-files` bucket, and seeds Root and Soil (seller ID A20LNIW0086CNE, six GSTINs).
+1. **Supabase** (the Pexeta Ops project): SQL editor → run `supabase/schema.sql` (existing installs: run `002_brand_marketplaces.sql`, `003_firstcry.sql` and `004_myntra.sql` instead). It runs after the ops schema and is safe to run again. It creates the `sd_` tables, row-level security, the private `sd-files` bucket, and seeds Root and Soil (seller ID A20LNIW0086CNE, six GSTINs).
 2. **Supabase Auth**:
    - URL configuration → add `https://dashboard.pexeta.in/auth/callback` to Redirect URLs.
    - Providers → Email: keep enabled, keep **Confirm email** on. Turn **off** "Allow new users to sign up" for email if your project allows it (seller logins are created by the team). Google stays as it is for ops.
@@ -73,6 +90,6 @@ The "Transactions for statement period" daily summaries are rejected on purpose:
 npm run test          # parsers vs independently computed totals, engine vs workbook, FirstCry parsers + engine, parser columns vs schema
 ```
 
-`test-data/` holds client files and is git-ignored. Put the Root and Soil Amazon files there, and the FirstCry files in `test-data/firstcry/`, to run the checks.
+`test-data/` holds client files and is git-ignored. Put the Root and Soil Amazon files there, the FirstCry files in `test-data/firstcry/` and the Myntra files in `test-data/myntra/`, to run the checks.
 
 **Local end-to-end** (optional): a Postgres with `supabase/test/supabase_stub.sql`, the ops schema and `supabase/schema.sql`, plus PostgREST on port 3009 with `jwt-secret = "local-e2e-secret-local-e2e-secret-0123456789"`; then `npx tsx --conditions=react-server scripts/e2e-local.ts`. It saves every test file through the real save layer, reads back as the seller with row-level security on, and checks totals, GST by GSTIN and isolation between sellers.

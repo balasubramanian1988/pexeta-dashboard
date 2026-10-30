@@ -6,6 +6,7 @@ import { getProfit } from "@/lib/data";
 import { count, percent, rupees } from "@/lib/format";
 import { getPeriod } from "@/lib/period";
 import FcProfit from "../_firstcry/Profit";
+import MyProfit from "../_myntra/Profit";
 
 export const metadata = { title: "Profitability" };
 
@@ -19,6 +20,7 @@ export default async function ProfitPage({ params, searchParams }: { params: Pro
   const { accountId } = await params;
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
   const period = await getPeriod(account.id, await searchParams);
+  if (account.marketplace === "Myntra") return <MyProfit account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   if (account.marketplace === "FirstCry") return <FcProfit account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   const { result, txns } = await getProfit(account, period.from, period.to);
   const t = result.totals;

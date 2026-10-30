@@ -35,6 +35,14 @@ const FIRSTCRY_CHECKLIST: { type: ReportType; when: string; where: string }[] = 
   { type: "fc_products", when: "Monthly, and whenever products, MRP or GST change", where: "All Product data. Gives product names, style codes, MRP and GST rates." },
 ];
 
+// Myntra Partner Portal downloads (Oct 2026). Overlapping dates are fine: rows are keyed by order line.
+const MYNTRA_CHECKLIST: { type: ReportType; when: string; where: string }[] = [
+  { type: "my_orders", when: "Daily", where: "MDirect Orders report, last 7 days (CSV). Orders, status, customer price, Myntra margin, cancellation reasons." },
+  { type: "my_settlement", when: "Weekly", where: "Settlement report (file \"SellerYearMonthWeekKey…\"), current and previous month, both the settled and the unsettled file. Payout per order, commission, shipping, UTRs; also brings the non-order deductions." },
+  { type: "my_returns", when: "Weekly", where: "MDirect Returns report, last 30 days (CSV). RTOs and customer returns with reasons." },
+  { type: "my_invoice", when: "Monthly", where: "Tax invoices (PDF): the \"Marketing Claim\" ads invoice every month, plus commission, logistics and MDirect invoices for GST." },
+];
+
 export default async function UploadsPage({ params }: { params: Promise<{ accountId: string }> }) {
   await requireTeam();
   const { accountId } = await params;
@@ -46,18 +54,19 @@ export default async function UploadsPage({ params }: { params: Promise<{ accoun
   ]);
   const yesterday = addDays(todayIst(), -1);
   const fc = account.marketplace === "FirstCry";
+  const my = account.marketplace === "Myntra";
 
   return (
     <>
       <PageHeader eyebrow={`${account.client_name} · ${account.marketplace}`} title="Upload reports" sub={`Seller ID ${account.seller_id || "not set"}. Re-uploading a report, or one that overlaps an earlier one, updates the data without double counting.`} />
       <Section title="Upload"><Uploader accountId={account.id} defaultDate={yesterday} marketplace={account.marketplace} /></Section>
 
-      <Section title="What to upload" sub={fc ? "Download from the FirstCry vendor panel. Upload the files exactly as downloaded (XLSX)." : "Download from Seller Central with this account selected."}>
+      <Section title="What to upload" sub={fc ? "Download from the FirstCry vendor panel. Upload the files exactly as downloaded (XLSX)." : my ? "Download from the Myntra Partner Portal. Upload the files exactly as downloaded: do not open and re-save CSVs in Excel, which turns order IDs into numbers like 1.00366E+11." : "Download from Seller Central with this account selected."}>
         <div className="overflow-x-auto">
           <table className="tbl">
-            <thead><tr><th>Report</th><th>How often</th><th>{fc ? "What to download" : "Where in Seller Central"}</th><th>Data up to</th></tr></thead>
+            <thead><tr><th>Report</th><th>How often</th><th>{fc || my ? "What to download" : "Where in Seller Central"}</th><th>Data up to</th></tr></thead>
             <tbody>
-              {(fc ? FIRSTCRY_CHECKLIST : CHECKLIST).map((c) => {
+              {(fc ? FIRSTCRY_CHECKLIST : my ? MYNTRA_CHECKLIST : CHECKLIST).map((c) => {
                 const f = fresh[c.type];
                 const stale = c.when === "Daily" && (!f?.periodEnd || f.periodEnd < addDays(yesterday, -1));
                 return (

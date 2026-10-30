@@ -18,11 +18,20 @@ const CONFLICT: Record<string, string> = {
   sd_fc_sales: "account_id,row_key",
   sd_fc_recon: "account_id,row_key",
   sd_fc_returns: "account_id,row_key",
+  sd_my_orders: "account_id,order_line_id",
+  sd_my_settlement: "account_id,row_key",
+  sd_my_deductions: "account_id,invoice_ref",
+  sd_my_returns: "account_id,row_key",
+  sd_my_invoices: "account_id,number",
+};
+// Same rule for Myntra: a pending ("unsettled") download never wipes a payout recorded by a settled one.
+const KEEP: Record<string, { key: string; text: string[]; nums: string[] }> = {
+  sd_fc_recon: { key: "row_key", text: ["vendor_invoice", "payment_advice", "debit_note", "ship_date", "delivery_date", "return_date"], nums: ["sr_qty", "sr_total", "sr_gross", "rto_qty", "rto_total", "rto_gross"] },
+  sd_my_settlement: { key: "row_key", text: ["utr_postpaid", "utr_prepaid", "date_postpaid", "date_prepaid", "settlement_date", "delivery_date", "return_date"], nums: ["settled", "settled_postpaid", "settled_prepaid"] },
+  sd_my_deductions: { key: "invoice_ref", text: ["utr", "settlement_date"], nums: [] },
 };
 // FirstCry reconciliation: a unit's invoice, payment advice and return debits arrive over several downloads.
 // An older or narrower file must not wipe what a newer one recorded, so blanks never overwrite values.
-const FC_KEEP_TEXT = ["vendor_invoice", "payment_advice", "debit_note", "ship_date", "delivery_date", "return_date"];
-const FC_KEEP_NUM = ["sr_qty", "sr_total", "sr_gross", "rto_qty", "rto_total", "rto_gross"];
 const SNAPSHOT = new Set(["sd_inventory", "sd_listings"]);
 // Reports whose SKU → ASIN pairs and fulfilment channel are authoritative.
 const SKU_SOURCE = new Set(["listings", "orders", "fba_inventory", "fc_products"]);
@@ -108,21 +117,29 @@ export async function saveParsed(admin: SupabaseClient, accountId: string, p: Pa
     return { saved: rows.length, warnings };
   }
 
-  if (p.table === "sd_fc_recon") {
-    rows = uniqueBy(rows, ["row_key"]);
+  const keep = KEEP[p.table];
+  if (keep) {
+    rows = uniqueBy(rows, [keep.key]);
     const prior = new Map<string, DbRow>();
     for (let i = 0; i < rows.length; i += CHUNK) {
-      const keys = rows.slice(i, i + CHUNK).map((r) => String(r.row_key));
-      const { data, error } = await admin.from("sd_fc_recon").select(["row_key", ...FC_KEEP_TEXT, ...FC_KEEP_NUM].join(", ")).eq("account_id", accountId).in("row_key", keys);
+      const keys = rows.slice(i, i + CHUNK).map((r) => String(r[keep.key]));
+      const { data, error } = await admin.from(p.table).select([keep.key, ...keep.text, ...keep.nums].join(", ")).eq("account_id", accountId).in(keep.key, keys);
       if (error) throw new Error(error.message);
-      for (const d of (data ?? []) as unknown as DbRow[]) prior.set(String(d.row_key), d);
+      for (const d of (data ?? []) as unknown as DbRow[]) prior.set(String(d[keep.key]), d);
     }
     for (const r of rows) {
-      const old = prior.get(String(r.row_key));
+      const old = prior.get(String(r[keep.key]));
       if (!old) continue;
-      for (const k of FC_KEEP_TEXT) if (r[k] == null && old[k] != null) r[k] = old[k];
-      for (const k of FC_KEEP_NUM) if (!Number(r[k]) && Number(old[k])) r[k] = Number(old[k]);
+      for (const k of keep.text) if (r[k] == null && old[k] != null) r[k] = old[k];
+      for (const k of keep.nums) if (!Number(r[k]) && Number(old[k])) r[k] = Number(old[k]);
     }
+  }
+
+  if (p.table === "sd_my_invoices" && p.pdf && rows[0]) {
+    const path = `${accountId}/myntra-invoices/${String(rows[0].number).replace(/[^A-Za-z0-9-]/g, "_")}.pdf`;
+    const { error } = await admin.storage.from("sd-files").upload(path, p.pdf, { contentType: "application/pdf", upsert: true });
+    if (error) throw new Error(`Could not store the PDF: ${error.message}`);
+    rows[0].storage_path = path;
   }
 
   const conflict = CONFLICT[p.table];

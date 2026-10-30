@@ -1,7 +1,7 @@
 import SettingForm from "@/components/SettingForm";
 import { Empty, PageHeader, Section } from "@/components/ui";
 import { getAccount, getViewer } from "@/lib/auth";
-import { getFirstCry, getMaster, getProfit } from "@/lib/data";
+import { getFirstCry, getMaster, getMyntra, getProfit } from "@/lib/data";
 import { percent, rupees } from "@/lib/format";
 import { addDays, latestDataDate } from "@/lib/period";
 import DefaultsForm from "./DefaultsForm";
@@ -18,6 +18,7 @@ export default async function CostsPage({ params }: { params: Promise<{ accountI
   const [{ result }, master] = await Promise.all([
     !latest ? Promise.resolve({ result: { rows: [] as { asin: string; avgPriceInclGst: number; units: number }[] } })
       : fc ? getFirstCry(account, addDays(latest, -89), latest).then(({ result: r }) => ({ result: { rows: r.rows.map((x) => ({ asin: x.id, avgPriceInclGst: x.units ? x.mrpValue / x.units : 0, units: x.units })) } }))
+      : account.marketplace === "Myntra" ? getMyntra(account, addDays(latest, -89), latest).then(({ result: r }) => ({ result: { rows: r.rows.map((x) => ({ asin: x.sku, avgPriceInclGst: x.avgPrice, units: x.units })) } }))
       : getProfit(account, addDays(latest, -89), latest),
     getMaster(account.id),
   ]);

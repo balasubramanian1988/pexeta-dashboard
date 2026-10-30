@@ -8,8 +8,8 @@ import Logo from "./Logo";
 
 type Props = { name: string; team: boolean; accounts: { id: string; name: string; marketplace: string; client_id: string; client_name: string }[] };
 
-// FirstCry pays a fixed base cost per unit (no fee lines or ads data), so its tabs differ from Amazon's.
-const FIRSTCRY_TABS = [
+// FirstCry and Myntra (dropship marketplaces) share one set of tabs; Amazon has its own.
+const DROPSHIP_TABS = [
   { slug: "", label: "Overview", icon: Gauge },
   { slug: "profit", label: "Profitability", icon: BadgeIndianRupee },
   { slug: "revenue", label: "Orders & returns", icon: BarChart3 },
@@ -66,7 +66,7 @@ export default function Sidebar({ name, team, accounts }: Props) {
                 {item(`/a/${a.id}${range}`, a.marketplace || a.name, Store, a.id === account?.id && path === `/a/${a.id}`)}
                 {a.id === account?.id && (
                   <div className="ml-5 space-y-0.5 border-l border-white/10 pl-2">
-                    {(a.marketplace === "FirstCry" ? FIRSTCRY_TABS : TABS).filter((t) => t.slug).map((t) => {
+                    {(a.marketplace === "FirstCry" || a.marketplace === "Myntra" ? DROPSHIP_TABS : TABS).filter((t) => t.slug).map((t) => {
                       const href = `/a/${a.id}/${t.slug}`;
                       return item(`${href}${t.slug === "costs" || t.slug === "gst" ? "" : range}`, t.label, t.icon, path.startsWith(href));
                     })}

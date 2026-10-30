@@ -2,6 +2,7 @@
 import type { ReportType } from "./detect";
 import type { Table } from "./read";
 import { fcProducts, fcRecon, fcReturns, fcSales } from "./firstcry";
+import { myDeductions, myOrders, myReturns, mySettlement } from "./myntra";
 import {
   calendarDate, istDate, istMonth, num, parseTimestamp, parseUnifiedDate, parseUsDate, pct, rowHasher, shortName, str, type Row,
 } from "./util";
@@ -448,6 +449,11 @@ export function mapTable(type: ReportType, t: Table, ctx: Ctx): Parsed {
     case "fc_recon": return fcRecon(t);
     case "fc_returns": return fcReturns(t);
     case "fc_products": return fcProducts(t);
+    case "my_orders": return myOrders(t);
+    case "my_settlement": return mySettlement(t);
+    case "my_deductions": return myDeductions(t);
+    case "my_returns": return myReturns(t);
+    case "my_invoice": throw new Error("PDFs are mapped with myInvoice()");
   }
 }
 

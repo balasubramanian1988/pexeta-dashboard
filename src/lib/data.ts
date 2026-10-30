@@ -6,6 +6,7 @@ import { computeProfit } from "./engine/profit";
 import { computeStock } from "./engine/stock";
 import type { AccountDefaults, AdRow, InventoryRow, ListingRow, ProductRow, ProductSetting, SbPurchaseRow, SkuRow, TxnRow } from "./engine/types";
 import type { Account } from "./auth";
+import { computeMyntra, type MyDeductionRow, type MyInvoiceRow, type MyOrderRow, type MyRateRow, type MyReturnRow, type MySettlementRow } from "./engine/myntra";
 import type { Finding, MarketSummary } from "./engine/brand";
 import { dailyNetSales } from "./engine/summaries";
 import { computeFcStock, computeFirstCry, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
@@ -140,7 +141,7 @@ export const getFcStock = cache(async (account: Account, from: string, to: strin
 
 // ---------- One brand across marketplaces ----------
 
-const SUPPORTED = new Set(["Amazon", "FirstCry"]);
+const SUPPORTED = new Set(["Amazon", "FirstCry", "Myntra"]);
 
 async function summarise(account: Account, from: string, to: string, prevFrom: string, prevTo: string): Promise<{ s: MarketSummary; extra: Finding[] }> {
   const base = { accountId: account.id, marketplace: account.marketplace, notes: [] as string[], daily: new Map<string, number>() };
@@ -181,6 +182,24 @@ async function summarise(account: Account, from: string, to: string, prevFrom: s
       extra,
     };
   }
+  if (account.marketplace === "Myntra") {
+    const [cur, prev] = await Promise.all([getMyntra(account, from, to), getMyntra(account, prevFrom, prevTo)]);
+    if (!cur.hasData) return { s: empty, extra: [] };
+    const t = cur.result.totals;
+    return {
+      s: {
+        ...empty, hasData: true, sales: t.sales, units: t.units - t.returnUnits,
+        returnRate: t.shipped ? (t.rtoUnits + t.returnUnits) / t.shipped : null,
+        // What Myntra keeps: its margin off the customer price, plus commission and shipping.
+        fees: t.myntraMargin + t.fees, ads: cur.result.ads.length ? t.ads : null, productCost: t.productCost, profit: t.profit, margin: t.margin,
+        prevSales: prev.hasData ? prev.result.totals.sales : null,
+        daily: new Map(cur.result.daily.map((d) => [d.date, d.sales])),
+        lossProducts: cur.result.rows.filter((r) => r.profit < 0).length,
+        notes: t.estimatedLines ? [`${t.estimatedLines} orders estimated: not in a settlement file yet.`] : [],
+      },
+      extra: [],
+    };
+  }
   return { s: { ...empty, notes: ["Reports from this marketplace are not read by the dashboard yet."] }, extra: [] };
 }
 
@@ -188,4 +207,39 @@ export const getBrand = cache(async (accounts: Account[], from: string, to: stri
   const prevTo = addDays(from, -1), prevFrom = addDays(prevTo, -(days - 1));
   const res = await Promise.all(accounts.map((a) => summarise(a, from, to, prevFrom, prevTo)));
   return { markets: res.map((r) => r.s), extra: res.flatMap((r) => r.extra), prevFrom, prevTo };
+});
+
+// ---------- Myntra ----------
+const MY_ORDER_COLS = "order_line_id, order_release_id, order_date, sku, sku_id, style_name, status, cancellation_reason, final_amount, total_mrp, seller_price, gt_charges, shipped_on, delivered_on, rto_date";
+const MY_SETTLE_COLS = "kind, order_line_id, order_date, sku_id, customer_paid, seller_product_amount, commission, logistics, tcs, tds, tax_rate, expected_settled, settled, settlement_date, settled_postpaid, utr_postpaid, date_postpaid, settled_prepaid, utr_prepaid, date_prepaid";
+const MY_SETTLE_NUM = ["customer_paid", "seller_product_amount", "commission", "logistics", "tcs", "tds", "tax_rate", "expected_settled", "settled", "settled_postpaid", "settled_prepaid"];
+
+export const getMyntra = cache(async (account: Account, from: string, to: string) => {
+  const sb = await createClient();
+  const [orders, settlement, rates, returns, invoices, deductions, skuRows, master] = await Promise.all([
+    fetchAll<MyOrderRow>((f, t) => sb.from("sd_my_orders").select(MY_ORDER_COLS).eq("account_id", account.id).gte("order_date", from).lte("order_date", to).order("order_line_id").range(f, t)).then((r) => numify(r, ["final_amount", "total_mrp", "seller_price", "gt_charges"])),
+    fetchAll<MySettlementRow>((f, t) => sb.from("sd_my_settlement").select(MY_SETTLE_COLS).eq("account_id", account.id).gte("order_date", from).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, MY_SETTLE_NUM)),
+    // Fee history for estimates: the 180 days up to the end of the period.
+    fetchAll<MyRateRow>((f, t) => sb.from("sd_my_settlement").select("kind, sku_id, order_date, seller_product_amount, commission, logistics, tax_rate").eq("account_id", account.id).gte("order_date", addDays(to, -179)).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["seller_product_amount", "commission", "logistics", "tax_rate"])),
+    fetchAll<MyReturnRow>((f, t) => sb.from("sd_my_returns").select("order_line_id, status, return_reason, sku").eq("account_id", account.id).range(f, t)),
+    fetchAll<MyInvoiceRow>((f, t) => sb.from("sd_my_invoices").select("number, charge_month, category, base_amount, total, description").eq("account_id", account.id).order("number").range(f, t)).then((r) => numify(r, ["base_amount", "total"])),
+    fetchAll<MyDeductionRow>((f, t) => sb.from("sd_my_deductions").select("invoice_ref, amount, utr, settlement_date, description").eq("account_id", account.id).order("invoice_ref").range(f, t)).then((r) => numify(r, ["amount"])),
+    fetchAll<{ sku: string; sku_id: string }>((f, t) => sb.from("sd_my_orders").select("sku, sku_id").eq("account_id", account.id).order("order_line_id").range(f, t)),
+    getFcMaster(account.id),
+  ]);
+  const skuOfId = new Map(skuRows.filter((x) => x.sku && x.sku_id).map((x) => [x.sku_id, x.sku]));
+  const result = computeMyntra({ orders, settlement, rates, returns, invoices, skuOfId, products: master.products, settings: master.settings, defaults: defaultsOf(account), from, to });
+  return { result, invoices, deductions, master, hasData: orders.length > 0 || settlement.length > 0 };
+});
+
+export const getMyStock = cache(async (account: Account, from: string, to: string, days: number) => {
+  const sb = await createClient();
+  const [orders, master] = await Promise.all([
+    fetchAll<MyOrderRow>((f, t) => sb.from("sd_my_orders").select(MY_ORDER_COLS).eq("account_id", account.id).gte("order_date", from).lte("order_date", to).order("order_line_id").range(f, t)),
+    getFcMaster(account.id),
+  ]);
+  // Demand = orders that were not cancelled before shipping.
+  const units = new Map<string, number>();
+  for (const o of orders) if (!(o.status === "F" && !o.shipped_on && !o.delivered_on) && o.sku) units.set(o.sku, (units.get(o.sku) ?? 0) + 1);
+  return computeFcStock({ unitsById: units, periodDays: days, products: master.products, settings: master.settings, defaults: defaultsOf(account) });
 });

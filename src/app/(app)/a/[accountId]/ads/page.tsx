@@ -14,7 +14,7 @@ const ratio = (a: number, b: number) => (b ? a / b : NaN);
 export default async function AdsPage({ params, searchParams }: { params: Promise<{ accountId: string }>; searchParams: Promise<{ from?: string; to?: string }> }) {
   const { accountId } = await params;
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
-  if (account.marketplace === "FirstCry") notFound(); // FirstCry has no ads or GST document reports here yet
+  if (account.marketplace === "FirstCry" || account.marketplace === "Myntra") notFound(); // FirstCry has no ads or GST document reports here yet
   const period = await getPeriod(account.id, await searchParams);
   const { result, ads, sbPurchases } = await getProfit(account, period.from, period.to);
   const t = result.totals;

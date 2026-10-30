@@ -18,7 +18,12 @@ export type ReportType =
   | "fc_sales"
   | "fc_recon"
   | "fc_returns"
-  | "fc_products";
+  | "fc_products"
+  | "my_orders"
+  | "my_settlement"
+  | "my_deductions"
+  | "my_returns"
+  | "my_invoice";
 
 export const REPORT_LABEL: Record<ReportType, string> = {
   orders: "All Orders",
@@ -39,14 +44,20 @@ export const REPORT_LABEL: Record<ReportType, string> = {
   fc_recon: "FirstCry: Vendor Reconciliation",
   fc_returns: "FirstCry: Sale Return data",
   fc_products: "FirstCry: All Product data",
+  my_orders: "Myntra: Orders report",
+  my_settlement: "Myntra: Settlement report",
+  my_deductions: "Myntra: Settlement non-order deductions",
+  my_returns: "Myntra: Returns report",
+  my_invoice: "Myntra tax invoice (ads, commission, logistics)",
 };
 
 export const AMAZON_REPORTS: ReportType[] = ["unified_transactions", "orders", "business_child", "fba_inventory", "listings", "sp_advertised", "sd_advertised", "sb_keyword", "sb_purchases", "returns", "mtr_b2c", "mtr_b2b", "stock_transfer", "tax_document"];
 export const FIRSTCRY_REPORTS: ReportType[] = ["fc_sales", "fc_recon", "fc_returns", "fc_products"];
+export const MYNTRA_REPORTS: ReportType[] = ["my_orders", "my_settlement", "my_deductions", "my_returns", "my_invoice"];
 
 /** Which marketplace a report belongs to, so an Amazon file is never saved into a FirstCry account (or the other way round). */
-export function reportMarketplace(t: ReportType): "Amazon" | "FirstCry" {
-  return FIRSTCRY_REPORTS.includes(t) ? "FirstCry" : "Amazon";
+export function reportMarketplace(t: ReportType): "Amazon" | "FirstCry" | "Myntra" {
+  return FIRSTCRY_REPORTS.includes(t) ? "FirstCry" : MYNTRA_REPORTS.includes(t) ? "Myntra" : "Amazon";
 }
 
 /** Snapshot reports with no date column need a report date from the uploader. */
@@ -57,6 +68,16 @@ export type Detection = { type: ReportType } | { type: null; reason: string };
 export function detectTable(headers: string[]): Detection {
   const h = new Set(headers.map((x) => x.trim().toLowerCase()));
   const has = (...cols: string[]) => cols.every((c) => h.has(c.toLowerCase()));
+
+  // Myntra
+  if (has("order release id", "order line id", "seller price", "gt charges")) return { type: "my_orders" };
+  if (has("order_release_id", "total_settled_amount", "order_line_id")) return { type: "my_settlement" };
+  if (has("seller_name", "settlement_amount", "invoice_ref")) return { type: "my_deductions" };
+  if (has("order_line_id", "order_rto_date", "return_reason")) return { type: "my_returns" };
+  if (has("seller sku code", "inventory count", "sellable inventory count"))
+    return { type: null, reason: "Myntra inventory report: not used. Its counts are listed quantities, not a stock count." };
+  if (has("customer_paid_amount", "commission_pct_incl_gst", "invoice_number") || has("sale_order_code", "taxable_amount", "invoice_number"))
+    return { type: null, reason: "Myntra GST report: not needed for the dashboard yet (it will feed a Myntra GST tab later)." };
 
   // FirstCry
   if (has("poitem ids", "base cost", "payment advice no")) return { type: "fc_recon" };
@@ -83,7 +104,8 @@ export function detectTable(headers: string[]): Detection {
 }
 
 export function detectPdf(text: string): Detection {
+  if (/MYNTRA DESIGNS/i.test(text) && /Tax Invoice/i.test(text) && /Invoice No\s*:/i.test(text)) return { type: "my_invoice" };
   if (/Amazon Seller Services/i.test(text) && /(Tax Invoice|Credit Note)/i.test(text) && /Total Invoice amount/i.test(text))
     return { type: "tax_document" };
-  return { type: null, reason: "PDF is not an Amazon tax invoice or credit note." };
+  return { type: null, reason: "PDF is not an Amazon or Myntra tax invoice." };
 }

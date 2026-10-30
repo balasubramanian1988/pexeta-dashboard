@@ -16,7 +16,7 @@ export default async function StockPage({ params, searchParams }: { params: Prom
   const { accountId } = await params;
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
   const period = await getPeriod(account.id, await searchParams);
-  if (account.marketplace === "FirstCry") return <FcStock account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
+  if (account.marketplace === "FirstCry" || account.marketplace === "Myntra") return <FcStock account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   const { rows, inventoryDate, listingsDate } = await getStock(account, period.from, period.to, period.days);
   const toMake = rows.reduce((s, r) => s + r.toMake, 0);
   const cover = account.plan_horizon_days + account.default_lead_time_days + account.default_safety_days;

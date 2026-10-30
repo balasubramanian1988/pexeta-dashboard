@@ -38,32 +38,48 @@ function readDelimited(text: string): Table {
   return { headers, rows: parsed.data as Row[] };
 }
 
-async function readXlsx(buf: Uint8Array): Promise<Table> {
-  const wb = new ExcelJS.Workbook();
-  // exceljs accepts a Node Buffer; copy so we don't depend on the caller's ArrayBuffer offset.
-  await wb.xlsx.load(Buffer.from(buf) as unknown as ArrayBuffer);
-  const ws = wb.worksheets[0];
-  if (!ws) return { headers: [], rows: [] };
+/** Values of one worksheet row, with formulas and rich text flattened. exceljs rows are 1-based. */
+function cells(row: ExcelJS.Row): unknown[] {
+  return (row.values as unknown[]).slice(1).map((v) => {
+    if (v && typeof v === "object" && !(v instanceof Date)) {
+      const o = v as { result?: unknown; text?: unknown; richText?: { text: string }[] };
+      return o.result ?? o.text ?? (o.richText ? o.richText.map((t) => t.text).join("") : "");
+    }
+    return v;
+  });
+}
+
+/** One worksheet → table. The header is the first of the top rows that is mostly filled in
+ *  (Myntra settlement files put two rows of merged group titles above the real header). */
+function sheetTable(ws: ExcelJS.Worksheet): Table {
+  const top: unknown[][] = [];
+  ws.eachRow({ includeEmpty: false }, (row, i) => { if (i <= 6) top.push(cells(row)); });
+  // Distinct non-blank values: a row of merged group titles ("Order Details" × 9) counts once per title.
+  const filled = (r: unknown[]) => new Set(r.filter((v) => v !== null && v !== undefined && String(v).trim() !== "").map((v) => String(v).trim())).size;
+  const widest = Math.max(0, ...top.map(filled));
+  const headerIdx = Math.max(0, top.findIndex((r) => filled(r) >= widest * 0.8));
+  let headerRow = 0, n = 0;
+  ws.eachRow({ includeEmpty: false }, (_row, i) => { if (n++ === headerIdx) headerRow = i; });
   const headers: string[] = [];
   const rows: Row[] = [];
   ws.eachRow({ includeEmpty: false }, (row, i) => {
-    const values = (row.values as unknown[]).slice(1); // exceljs rows are 1-based
-    if (i === 1) {
-      values.forEach((v) => headers.push(String(v ?? "").trim()));
-      return;
-    }
+    const values = cells(row);
+    if (i < headerRow) return;
+    if (i === headerRow) { values.forEach((v) => headers.push(String(v ?? "").trim())); return; }
     const r: Row = {};
-    headers.forEach((h, j) => {
-      let v = values[j] as unknown;
-      if (v && typeof v === "object" && !(v instanceof Date)) {
-        const o = v as { result?: unknown; text?: unknown; richText?: { text: string }[] };
-        v = o.result ?? o.text ?? (o.richText ? o.richText.map((t) => t.text).join("") : "");
-      }
-      r[h] = v as Cell;
-    });
+    headers.forEach((h, j) => { r[h] = values[j] as Cell; });
     rows.push(r);
   });
   return { headers, rows };
+}
+
+/** Every worksheet except glossaries. Most reports have one sheet; Myntra's settlement and B2C files have several. */
+async function readXlsx(buf: Uint8Array): Promise<{ sheet: string; table: Table }[]> {
+  const wb = new ExcelJS.Workbook();
+  // exceljs accepts a Node Buffer; copy so we don't depend on the caller's ArrayBuffer offset.
+  await wb.xlsx.load(Buffer.from(buf) as unknown as ArrayBuffer);
+  const sheets = wb.worksheets.filter((ws) => !/^glossary$/i.test(ws.name.trim()));
+  return sheets.map((ws) => ({ sheet: ws.name, table: sheetTable(ws) }));
 }
 
 /** PDF → text with one line per visual line, so label/value pairs stay together. */
@@ -102,7 +118,10 @@ export async function readUpload(fileName: string, data: Uint8Array): Promise<Re
     return out;
   }
   if (lower.endsWith(".pdf")) { const copy = data.slice(); return [{ kind: "pdf", fileName, text: await readPdf(data), data: copy }]; }
-  if (lower.endsWith(".xlsx")) return [{ kind: "table", fileName, table: await readXlsx(data) }];
+  if (lower.endsWith(".xlsx")) {
+    const sheets = await readXlsx(data);
+    return sheets.map((x) => ({ kind: "table" as const, fileName: sheets.length > 1 ? `${fileName} › ${x.sheet}` : fileName, table: x.table }));
+  }
   // .csv and Amazon's tab-separated .txt
   return [{ kind: "table", fileName, table: readDelimited(new TextDecoder("utf-8").decode(data)) }];
 }

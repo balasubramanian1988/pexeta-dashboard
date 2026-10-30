@@ -11,14 +11,15 @@ export function todayIst() {
   return new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-/** Latest day with sales data: Amazon settled transactions, or FirstCry orders. */
+/** Latest day with sales data: Amazon settled transactions, FirstCry or Myntra orders. */
 export async function latestDataDate(accountId: string): Promise<string | null> {
   const supabase = await createClient();
-  const [amz, fc] = await Promise.all([
+  const [amz, fc, my] = await Promise.all([
     supabase.from("sd_transactions").select("posted_date").eq("account_id", accountId).order("posted_date", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("sd_fc_sales").select("order_date").eq("account_id", accountId).order("order_date", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("sd_my_orders").select("order_date").eq("account_id", accountId).order("order_date", { ascending: false }).limit(1).maybeSingle(),
   ]);
-  const dates = [amz.data?.posted_date as string | undefined, fc.data?.order_date as string | undefined].filter(Boolean) as string[];
+  const dates = [amz.data?.posted_date as string | undefined, fc.data?.order_date as string | undefined, my.data?.order_date as string | undefined].filter(Boolean) as string[];
   return dates.sort().pop() ?? null;
 }
 
