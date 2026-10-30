@@ -8,7 +8,7 @@
 //   Myntra tax invoices (PDF) – ads ("Marketing Claim"), commission, logistics, subscription
 import type { Parsed } from "./map";
 import type { Table } from "./read";
-import { istDate, num, parseTimestamp, str, type Cell } from "./util";
+import { istDate, num, parseTimestamp, sha1, str, type Cell } from "./util";
 
 function base(type: Parsed["type"], table: string): Parsed {
   return { type, table, rows: [], periodStart: null, periodEnd: null, products: [], skus: [], warnings: [] };
@@ -149,18 +149,60 @@ export function myInvoice(text: string, fileName: string): Parsed {
   const flat = text.replace(/\s+/g, " ");
   const category = /Marketing Claim|Self Service/i.test(flat) ? "Ads" : /Commission/i.test(flat) || /COMMISSION/.test(fileName) ? "Commission"
     : /Fixed_Fees|Shipping_Charges|LOGISTICS/i.test(flat + fileName) ? "Logistics" : /MDirect/i.test(flat) ? "Subscription" : "Other";
-  // Which month the charge is for: "Marketing Claim-Aug 2026", "MDirect Aug 26", "Commission_2026-09", else the invoice period.
+  // Which month the charge is for: "Marketing Claim-Aug 2026", "Marketing Claim-Sep" (no year), "MDirect Aug 26",
+  // "MDirectSept26", "Commission_2026-09"; else the invoice period. A missing year is the invoice's year, or the year
+  // before when the month is later than the invoice date.
   const MON = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
   let month = "";
-  const w = flat.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(20)?(\d{2})\b/i);
-  const iso = flat.match(/_(\d{4})-(\d{2})\b/);
-  if (w) month = `20${w[3]}-${String(MON.indexOf(w[1].toLowerCase().slice(0, 3)) + 1).padStart(2, "0")}-01`;
-  else if (iso) month = `${iso[1]}-${iso[2]}-01`;
+  const w = flat.match(/(?:Claim\s*-?\s*|MDirect\s*)(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*(?:(?:20)?(\d{2})\b)?/i);
+  const iso = flat.match(/_\s?(\d{4})-\s?(\d{2})\b/);
+  if (w && date) {
+    const mm = MON.indexOf(w[1].toLowerCase().slice(0, 3)) + 1;
+    let yy = w[2] ? 2000 + Number(w[2]) : Number(date.slice(0, 4));
+    if (!w[2] && mm > Number(date.slice(5, 7))) yy -= 1;
+    month = `${yy}-${String(mm).padStart(2, "0")}-01`;
+  } else if (iso) month = `${iso[1]}-${iso[2]}-01`;
   else if (invPeriod) month = `${invPeriod}-01`;
+  const campaign = flat.match(/RO\/PO No\s*:\s*(Self Service \S+(?: \S+){0,3}?)\s+(?:Nature of supply|RO\/PO Date|Invoice Period)/)?.[1] ?? "";
   if (!number || !date) { p.warnings.push("Could not read the invoice number or date."); return p; }
-  const desc = (flat.match(/(Marketing Claim-? ?\w+ \d{4}|Self Service \S+|Commission_ ?\d{4}- ?\d{2}|Fixed_Fees_\d{4}-\d{2}|MDirect \w+ \d{2})/)?.[1] ?? category).replace(/\s+/g, " ");
+  const label = flat.match(/(Marketing Claim\s*-?\s*\w+(?: \d{4})?|Commission_ ?\d{4}-(?: ?\d{2}\b(?!\d))?|Fixed_Fees_\d{4}-\d{2}|MDirect ?\w+)/)?.[1] ?? category;
+  const desc = [label.replace(/\s+/g, " "), campaign].filter(Boolean).join(" · ");
   p.rows.push({ number, invoice_date: date, charge_month: month || `${date.slice(0, 7)}-01`, category, description: desc, base_amount: baseAmt, gst, total });
   p.periodStart = p.periodEnd = date;
   if (Math.abs(baseAmt + gst - total) > 0.05) p.warnings.push(`Base + GST (${(baseAmt + gst).toFixed(2)}) does not equal the total (${total.toFixed(2)}).`);
+  return p;
+}
+
+/** Ads performance by style ("Styles - Page 1.csv" from Myntra ads). The file has no dates: the dashboard links it to
+ *  the ads invoice whose amount equals its total spend, and uses it to split that month's ads across products. */
+export function myAdsStyles(t: Table): Parsed {
+  const p = base("my_ads_styles", "sd_my_ads_styles");
+  const rows = t.rows.filter((r) => id(r["Style ID"]) && n(r["Spend"]) > 0);
+  const total = Math.round(rows.reduce((s, r) => s + n(r["Spend"]), 0) * 100) / 100;
+  const reportKey = sha1(rows.map((r) => `${id(r["Style ID"])}:${n(r["Spend"])}:${n(r["Clicks"])}`).sort()).slice(0, 16);
+  for (const r of rows) {
+    p.rows.push({
+      row_key: `${reportKey}|${id(r["Style ID"])}`, report_key: reportKey, report_total: total,
+      style_id: id(r["Style ID"]), style_name: clean(r["Style"]).replace(/\s+/g, " "),
+      spend: n(r["Spend"]), impressions: n(r["Impressions"]), clicks: n(r["Clicks"]),
+      units: n(r["Units Sold"]), revenue: n(r["Revenue"]), direct_revenue: n(r["Direct - Revenue"]),
+    });
+  }
+  if (!p.rows.length) p.warnings.push("No styles with ad spend in this file.");
+  else p.warnings.push(`Total spend ₹${total.toLocaleString("en-IN")}. The dashboard links it to the Myntra ads invoice for the same amount once that invoice is uploaded.`);
+  return p;
+}
+
+/** Style dashboard export: Myntra style ↔ seller SKU, MRP and listing status. Goes into the product list. */
+export function myStyles(t: Table): Parsed {
+  const p = base("my_styles", "sd_products");
+  for (const r of t.rows) {
+    const sku = clean(r["SellerSkuCode"]) || clean(r["VAN"]);
+    const style = id(r["Style Id"]);
+    if (!sku) continue;
+    p.products.push({ asin: sku, title: "", mrp: n(r["Seller MRP"]) || null, style_code: style, status: clean(r["Listing Status"]), category: clean(r["Article Type"]) });
+    if (style) p.skus.push({ sku: style, asin: sku, fulfillment: "Myntra style" });
+  }
+  if (!p.products.length) p.warnings.push("No styles found in the file.");
   return p;
 }

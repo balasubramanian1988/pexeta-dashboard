@@ -2,7 +2,7 @@
 import type { ReportType } from "./detect";
 import type { Table } from "./read";
 import { fcProducts, fcRecon, fcReturns, fcSales } from "./firstcry";
-import { myDeductions, myOrders, myReturns, mySettlement } from "./myntra";
+import { myAdsStyles, myDeductions, myOrders, myReturns, mySettlement, myStyles } from "./myntra";
 import {
   calendarDate, istDate, istMonth, num, parseTimestamp, parseUnifiedDate, parseUsDate, pct, rowHasher, shortName, str, type Row,
 } from "./util";
@@ -454,6 +454,8 @@ export function mapTable(type: ReportType, t: Table, ctx: Ctx): Parsed {
     case "my_deductions": return myDeductions(t);
     case "my_returns": return myReturns(t);
     case "my_invoice": throw new Error("PDFs are mapped with myInvoice()");
+    case "my_ads_styles": return myAdsStyles(t);
+    case "my_styles": return myStyles(t);
   }
 }
 

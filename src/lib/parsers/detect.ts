@@ -23,7 +23,9 @@ export type ReportType =
   | "my_settlement"
   | "my_deductions"
   | "my_returns"
-  | "my_invoice";
+  | "my_invoice"
+  | "my_ads_styles"
+  | "my_styles";
 
 export const REPORT_LABEL: Record<ReportType, string> = {
   orders: "All Orders",
@@ -49,11 +51,13 @@ export const REPORT_LABEL: Record<ReportType, string> = {
   my_deductions: "Myntra: Settlement non-order deductions",
   my_returns: "Myntra: Returns report",
   my_invoice: "Myntra tax invoice (ads, commission, logistics)",
+  my_ads_styles: "Myntra: Ads by style",
+  my_styles: "Myntra: Style dashboard (product list)",
 };
 
 export const AMAZON_REPORTS: ReportType[] = ["unified_transactions", "orders", "business_child", "fba_inventory", "listings", "sp_advertised", "sd_advertised", "sb_keyword", "sb_purchases", "returns", "mtr_b2c", "mtr_b2b", "stock_transfer", "tax_document"];
 export const FIRSTCRY_REPORTS: ReportType[] = ["fc_sales", "fc_recon", "fc_returns", "fc_products"];
-export const MYNTRA_REPORTS: ReportType[] = ["my_orders", "my_settlement", "my_deductions", "my_returns", "my_invoice"];
+export const MYNTRA_REPORTS: ReportType[] = ["my_orders", "my_settlement", "my_deductions", "my_returns", "my_invoice", "my_ads_styles", "my_styles"];
 
 /** Which marketplace a report belongs to, so an Amazon file is never saved into a FirstCry account (or the other way round). */
 export function reportMarketplace(t: ReportType): "Amazon" | "FirstCry" | "Myntra" {
@@ -74,6 +78,8 @@ export function detectTable(headers: string[]): Detection {
   if (has("order_release_id", "total_settled_amount", "order_line_id")) return { type: "my_settlement" };
   if (has("seller_name", "settlement_amount", "invoice_ref")) return { type: "my_deductions" };
   if (has("order_line_id", "order_rto_date", "return_reason")) return { type: "my_returns" };
+  if (has("style", "style id", "spend", "impressions", "roi")) return { type: "my_ads_styles" };
+  if (has("style id", "sellerskucode", "seller mrp", "listing status")) return { type: "my_styles" };
   if (has("seller sku code", "inventory count", "sellable inventory count"))
     return { type: null, reason: "Myntra inventory report: not used. Its counts are listed quantities, not a stock count." };
   if (has("customer_paid_amount", "commission_pct_incl_gst", "invoice_number") || has("sale_order_code", "taxable_amount", "invoice_number"))

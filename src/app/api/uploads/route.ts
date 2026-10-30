@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       period_start: r.periodStart, period_end: r.periodEnd, rows_parsed: r.rows.length || r.products.length, status: "processing", uploaded_by: viewer.memberId,
     }).select("id").single();
     try {
-      if (!r.rows.length && !(r.type === "fc_products" && r.products.length)) throw new Error(r.warnings.join(" ") || "No data rows in this report.");
+      if (!r.rows.length && !((r.type === "fc_products" || r.type === "my_styles") && r.products.length)) throw new Error(r.warnings.join(" ") || "No data rows in this report.");
       const { saved, warnings } = await saveParsed(admin, account.id, r);
       const message = warnings.join(" ");
       if (up) await admin.from("sd_uploads").update({ status: "done", rows_saved: saved, message }).eq("id", up.id);

@@ -23,6 +23,7 @@ const CONFLICT: Record<string, string> = {
   sd_my_deductions: "account_id,invoice_ref",
   sd_my_returns: "account_id,row_key",
   sd_my_invoices: "account_id,number",
+  sd_my_ads_styles: "account_id,row_key",
 };
 // Same rule for Myntra: a pending ("unsettled") download never wipes a payout recorded by a settled one.
 const KEEP: Record<string, { key: string; text: string[]; nums: string[] }> = {
@@ -34,7 +35,7 @@ const KEEP: Record<string, { key: string; text: string[]; nums: string[] }> = {
 // An older or narrower file must not wipe what a newer one recorded, so blanks never overwrite values.
 const SNAPSHOT = new Set(["sd_inventory", "sd_listings"]);
 // Reports whose SKU → ASIN pairs and fulfilment channel are authoritative.
-const SKU_SOURCE = new Set(["listings", "orders", "fba_inventory", "fc_products"]);
+const SKU_SOURCE = new Set(["listings", "orders", "fba_inventory", "fc_products", "my_styles"]);
 const CHUNK = 500;
 
 async function chunked(rows: DbRow[], fn: (part: DbRow[]) => PromiseLike<{ error: { message: string } | null }>) {
@@ -59,15 +60,19 @@ export async function saveParsed(admin: SupabaseClient, accountId: string, p: Pa
     const skus = uniqueBy(p.skus.filter((s) => s.sku && s.asin).map((s) => ({ account_id: accountId, ...s })), ["sku"]);
     await chunked(skus, (part) => admin.from("sd_skus").upsert(part, { onConflict: "account_id,sku", ignoreDuplicates: !SKU_SOURCE.has(p.type) }));
   }
-  if (p.type === "fc_products") {
-    // The product list is authoritative for names, MRP, GST rate and status. Keep a short name the team has edited.
+  if (p.type === "fc_products" || p.type === "my_styles") {
+    // Product lists are authoritative for MRP, GST rate, style code and status. Keep a short name the team has
+    // edited, and a title from elsewhere when the list has none (Myntra's style export has no names).
     const ids = [...new Set(p.products.map((x) => x.asin))];
-    const { data: existing } = await admin.from("sd_products").select("asin, title, short_name").eq("account_id", accountId).in("asin", ids);
+    const { data: existing } = await admin.from("sd_products").select("asin, title, short_name, gst_rate").eq("account_id", accountId).in("asin", ids);
+    const prior = new Map((existing ?? []).map((e) => [e.asin, e]));
     const edited = new Map((existing ?? []).filter((e) => e.short_name && e.short_name !== shortName(e.title ?? "")).map((e) => [e.asin, e.short_name as string]));
-    const rows = uniqueBy(p.products.map((x) => ({
-      account_id: accountId, asin: x.asin, title: x.title, short_name: edited.get(x.asin) ?? shortName(x.title), mrp: x.mrp ?? null,
-      style_code: x.style_code ?? "", gst_rate: x.gst_rate ?? null, status: x.status ?? "", category: x.category ?? "",
-    })), ["asin"]);
+    const rows = uniqueBy(p.products.map((x) => {
+      const title = x.title || (prior.get(x.asin)?.title as string) || "";
+      return {
+      account_id: accountId, asin: x.asin, title, short_name: edited.get(x.asin) ?? shortName(title), mrp: x.mrp ?? null,
+      style_code: x.style_code ?? "", gst_rate: x.gst_rate ?? (prior.get(x.asin)?.gst_rate as number | null) ?? null, status: x.status ?? "", category: x.category ?? "",
+    }; }), ["asin"]);
     await chunked(rows, (part) => admin.from("sd_products").upsert(part, { onConflict: "account_id,asin" }));
     return { saved: rows.length, warnings };
   }

@@ -34,6 +34,7 @@ export type MyReturnRow = { order_line_id: string; status: string; return_reason
 export type MyInvoiceRow = { number: string; charge_month: string; category: string; base_amount: number; total: number; description: string };
 export type MyDeductionRow = { invoice_ref: string; amount: number; utr: string | null; settlement_date: string | null; description: string };
 export type MyProduct = { asin: string; title: string; short_name: string };
+export type MyAdStyleRow = { report_key: string; report_total: number; style_id: string; style_name: string; spend: number; clicks: number; units: number; revenue: number };
 
 export type MyLineStatus = "settled" | "pending_settlement" | "not_in_settlement" | "returned" | "rto" | "cancelled";
 export const MY_STATUS_LABEL: Record<MyLineStatus, string> = {
@@ -51,6 +52,7 @@ export type MyProductRow = {
   sales: number; revenue: number; myntraMargin: number; fees: number; productCost: number;
   estimated: number; profit: number; margin: number; costPerUnit: number;
   avgPrice: number;          // customer price incl. GST, average over units sold
+  ads: number;               // this period's share of ads invoices, split by the linked ads-by-style report
 };
 
 export type MyResult = {
@@ -62,7 +64,10 @@ export type MyResult = {
   };
   status: Record<MyLineStatus, { lines: number; amount: number }>;  // amount = payout incl. GST (estimated where not settled)
   utrs: { utr: string; date: string | null; amount: number; lines: number }[];
-  ads: { number: string; month: string; base: number; inPeriod: number }[];
+  ads: { number: string; month: string; base: number; inPeriod: number; report: string | null; description: string }[];
+  adStyles: { styleId: string; sku: string; name: string; spend: number; inPeriod: number; units: number; revenue: number; roas: number }[];
+  unmatchedAdReports: { reportKey: string; total: number; styles: number }[];
+  adsUnallocated: number;
   reasons: { reason: string; kind: "Return" | "RTO / cancelled"; count: number }[];
   daily: { date: string; sales: number; units: number }[];
 };
@@ -86,8 +91,10 @@ export function computeMyntra(args: {
   orders: MyOrderRow[]; settlement: MySettlementRow[]; rates: MyRateRow[]; returns: MyReturnRow[];
   invoices: MyInvoiceRow[]; skuOfId: Map<string, string>; products: MyProduct[]; settings: ProductSetting[];
   defaults: AccountDefaults; from: string; to: string;
+  adStyles?: MyAdStyleRow[]; skuOfStyle?: Map<string, string>;
 }): MyResult {
   const { orders, settlement, rates, returns, invoices, skuOfId, products, settings, defaults, from, to } = args;
+  const adStyleRows = args.adStyles ?? [], skuOfStyle = args.skuOfStyle ?? new Map<string, string>();
   const product = new Map(products.map((p) => [p.asin, p]));
   const setting = new Map(settings.map((s) => [s.asin, s]));
   const fwd = new Map(settlement.filter((s) => s.kind === "forward").map((s) => [s.order_line_id, s]));
@@ -115,7 +122,7 @@ export function computeMyntra(args: {
   const acc = new Map<string, Acc>();
   const get = (sku: string) => {
     let a = acc.get(sku);
-    if (!a) { a = { sku, orders: 0, units: 0, returnUnits: 0, rtoUnits: 0, cancelled: 0, sales: 0, revenue: 0, myntraMargin: 0, fees: 0, productCost: 0, estimated: 0, lastPrice: 0, priceSum: 0 }; acc.set(sku, a); }
+    if (!a) { a = { sku, orders: 0, units: 0, returnUnits: 0, rtoUnits: 0, cancelled: 0, sales: 0, revenue: 0, myntraMargin: 0, fees: 0, productCost: 0, estimated: 0, ads: 0, lastPrice: 0, priceSum: 0 }; acc.set(sku, a); }
     return a;
   };
   const status = Object.fromEntries(Object.keys(MY_STATUS_LABEL).map((k) => [k, { lines: 0, amount: 0 }])) as MyResult["status"];
@@ -170,10 +177,37 @@ export function computeMyntra(args: {
     else { status.not_in_settlement.lines++; status.not_in_settlement.amount += sp - feesIncl; }
   }
 
-  const ads = adsInPeriod(invoices, from, to);
+  // Ads: each month's invoice, split across products by the ads-by-style report whose total spend matches it.
+  const reports = new Map<string, MyAdStyleRow[]>();
+  for (const r of adStyleRows) reports.set(r.report_key, [...(reports.get(r.report_key) ?? []), r]);
+  const adInv = new Map(invoices.filter((i) => i.category === "Ads").map((i) => [i.number, i]));
+  const used = new Set<string>();
+  const linkOf = (base: number) => [...reports.entries()].find(([k, rows]) => !used.has(k) && Math.abs(rows[0].report_total - base) <= 1)?.[0] ?? null;
+  const ads = adsInPeriod(invoices, from, to).map((a) => {
+    const report = linkOf(a.base);
+    if (report) used.add(report);
+    return { ...a, report, description: adInv.get(a.number)?.description ?? "" };
+  });
   const adTotal = ads.reduce((s, x) => s + x.inPeriod, 0);
+  const styleAgg = new Map<string, MyResult["adStyles"][number]>();
+  let adsUnallocated = 0;
+  for (const a of ads) {
+    const rows = a.report ? reports.get(a.report)! : [];
+    const total = rows.reduce((s, r) => s + r.spend, 0);
+    if (!total) { adsUnallocated += a.inPeriod; continue; }
+    for (const r of rows) {
+      const share = (a.inPeriod * r.spend) / total, frac = a.base ? a.inPeriod / a.base : 0;
+      const sku = skuOfStyle.get(r.style_id) ?? "";
+      const x = styleAgg.get(r.style_id) ?? { styleId: r.style_id, sku, name: r.style_name, spend: 0, inPeriod: 0, units: 0, revenue: 0, roas: 0 };
+      x.spend += r.spend * frac; x.inPeriod += share; x.units += r.units * frac; x.revenue += r.revenue * frac;
+      styleAgg.set(r.style_id, x);
+      if (sku) get(sku).ads += share; else adsUnallocated += share;
+    }
+  }
+  const adStyles = [...styleAgg.values()].map((x) => ({ ...x, roas: x.inPeriod ? x.revenue / x.inPeriod : 0 })).sort((a, b) => b.inPeriod - a.inPeriod);
+  const unmatchedAdReports = [...reports.entries()].filter(([k]) => !used.has(k)).map(([k, rows]) => ({ reportKey: k, total: rows[0].report_total, styles: rows.length }));
   const rows: MyProductRow[] = [...acc.values()].map((a) => {
-    const profit = a.revenue - a.fees - a.productCost;
+    const profit = a.revenue - a.fees - a.productCost - a.ads;
     const p = product.get(a.sku);
     const { priceSum, lastPrice, ...rest } = a;
     return { ...rest, name: p?.short_name || p?.title || a.sku, profit, margin: a.sales ? profit / a.sales : 0, costPerUnit: unitCost(a.sku, lastPrice), avgPrice: a.units ? priceSum / a.units : 0 };
@@ -199,7 +233,7 @@ export function computeMyntra(args: {
     totals: { ...t, shipped, ads: adTotal, estimatedLines, profit, margin: t.sales ? profit / t.sales : 0, rtoRate: shipped ? t.rtoUnits / shipped : 0, returnRate: t.units ? t.returnUnits / t.units : 0 },
     status,
     utrs: [...utr.entries()].map(([u, v]) => ({ utr: u, ...v })).sort((a, b) => String(b.date).localeCompare(String(a.date))),
-    ads,
+    ads, adStyles, unmatchedAdReports, adsUnallocated,
     reasons: [...reasonCount.values()].sort((a, b) => b.count - a.count),
     daily: [...daily.entries()].map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date)),
   };

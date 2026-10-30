@@ -6,7 +6,7 @@ import { computeProfit } from "./engine/profit";
 import { computeStock } from "./engine/stock";
 import type { AccountDefaults, AdRow, InventoryRow, ListingRow, ProductRow, ProductSetting, SbPurchaseRow, SkuRow, TxnRow } from "./engine/types";
 import type { Account } from "./auth";
-import { computeMyntra, type MyDeductionRow, type MyInvoiceRow, type MyOrderRow, type MyRateRow, type MyReturnRow, type MySettlementRow } from "./engine/myntra";
+import { computeMyntra, type MyAdStyleRow, type MyDeductionRow, type MyInvoiceRow, type MyOrderRow, type MyRateRow, type MyReturnRow, type MySettlementRow } from "./engine/myntra";
 import type { Finding, MarketSummary } from "./engine/brand";
 import { dailyNetSales } from "./engine/summaries";
 import { computeFcStock, computeFirstCry, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
@@ -224,11 +224,16 @@ export const getMyntra = cache(async (account: Account, from: string, to: string
     fetchAll<MyReturnRow>((f, t) => sb.from("sd_my_returns").select("order_line_id, status, return_reason, sku").eq("account_id", account.id).range(f, t)),
     fetchAll<MyInvoiceRow>((f, t) => sb.from("sd_my_invoices").select("number, charge_month, category, base_amount, total, description").eq("account_id", account.id).order("number").range(f, t)).then((r) => numify(r, ["base_amount", "total"])),
     fetchAll<MyDeductionRow>((f, t) => sb.from("sd_my_deductions").select("invoice_ref, amount, utr, settlement_date, description").eq("account_id", account.id).order("invoice_ref").range(f, t)).then((r) => numify(r, ["amount"])),
-    fetchAll<{ sku: string; sku_id: string }>((f, t) => sb.from("sd_my_orders").select("sku, sku_id").eq("account_id", account.id).order("order_line_id").range(f, t)),
+    fetchAll<{ sku: string; sku_id: string; style_id: string }>((f, t) => sb.from("sd_my_orders").select("sku, sku_id, style_id").eq("account_id", account.id).order("order_line_id").range(f, t)),
     getFcMaster(account.id),
   ]);
+  const [adStyles, styleSkus] = await Promise.all([
+    fetchAll<MyAdStyleRow>((f, t) => sb.from("sd_my_ads_styles").select("report_key, report_total, style_id, style_name, spend, clicks, units, revenue").eq("account_id", account.id).order("row_key").range(f, t)).then((r) => numify(r, ["report_total", "spend", "clicks", "units", "revenue"])),
+    fetchAll<{ sku: string; asin: string }>((f, t) => sb.from("sd_skus").select("sku, asin").eq("account_id", account.id).eq("fulfillment", "Myntra style").range(f, t)),
+  ]);
   const skuOfId = new Map(skuRows.filter((x) => x.sku && x.sku_id).map((x) => [x.sku_id, x.sku]));
-  const result = computeMyntra({ orders, settlement, rates, returns, invoices, skuOfId, products: master.products, settings: master.settings, defaults: defaultsOf(account), from, to });
+  const skuOfStyle = new Map([...styleSkus.map((x) => [x.sku, x.asin] as const), ...skuRows.filter((x) => x.sku && x.style_id).map((x) => [x.style_id, x.sku] as const)]);
+  const result = computeMyntra({ orders, settlement, rates, returns, invoices, skuOfId, products: master.products, settings: master.settings, defaults: defaultsOf(account), from, to, adStyles, skuOfStyle });
   return { result, invoices, deductions, master, hasData: orders.length > 0 || settlement.length > 0 };
 });
 

@@ -621,3 +621,23 @@ begin
     execute format('create policy "sd read" on %I for select using (sd_can_see_account(account_id))', t);
   end loop;
 end $$;
+
+-- Myntra ads by style ("Styles - Page 1.csv"). No dates in the file: linked to the ads invoice with the same total.
+create table if not exists sd_my_ads_styles (
+  account_id uuid not null references sd_accounts(id) on delete cascade,
+  row_key text not null,                    -- report | style
+  report_key text not null,                 -- fingerprint of the file's rows
+  report_total numeric not null default 0,  -- total spend in the file
+  style_id text not null,
+  style_name text not null default '',
+  spend numeric not null default 0,
+  impressions numeric not null default 0,
+  clicks numeric not null default 0,
+  units numeric not null default 0,
+  revenue numeric not null default 0,       -- ad-attributed revenue (direct + indirect)
+  direct_revenue numeric not null default 0,
+  primary key (account_id, row_key)
+);
+alter table sd_my_ads_styles enable row level security;
+drop policy if exists "sd read" on sd_my_ads_styles;
+create policy "sd read" on sd_my_ads_styles for select using (sd_can_see_account(account_id));

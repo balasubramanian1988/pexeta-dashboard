@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseUpload, type ParseResult } from "../src/lib/parsers";
-import { computeMyntra, type MyInvoiceRow, type MyOrderRow, type MyReturnRow, type MySettlementRow } from "../src/lib/engine/myntra";
+import { computeMyntra, type MyAdStyleRow, type MyInvoiceRow, type MyOrderRow, type MyReturnRow, type MySettlementRow } from "../src/lib/engine/myntra";
 
 const DIR = join(process.cwd(), "test-data", "myntra");
 type Ok = Extract<ParseResult, { ok: true }>;
@@ -39,8 +39,12 @@ async function main() {
   expect("Orders (Sep + Oct)", of("my_orders").reduce((s, r) => s + r.rows.length, 0), 101, 0);
   expect("Returns rows (Sep 6 + Oct 12)", of("my_returns").reduce((s, r) => s + r.rows.length, 0), 18, 0);
   const inv = of("my_invoice").flatMap((r) => r.rows);
-  expect("Invoices", inv.length, 4, 0);
-  expect("Ads invoice (Aug) base", sum(inv.filter((r) => r.category === "Ads"), "base_amount"), 6763, 0.01);
+  expect("Invoices (8 PDFs, one sent twice)", new Set(inv.map((r) => r.number)).size, 7, 0);
+  const invU = [...new Map(inv.map((r) => [String(r.number), r])).values()];
+  expect("Sep ads invoices", sum(invU.filter((r) => r.category === "Ads" && r.charge_month === "2026-09-01"), "base_amount"), 7628.3, 0.01);
+  const adStyles = of("my_ads_styles").flatMap((r) => r.rows) as unknown as MyAdStyleRow[];
+  expect("Ads-by-style files", new Set(adStyles.map((r) => r.report_key)).size, 3, 0);
+  expect("Ads invoice (Aug) base", sum(invU.filter((r) => r.category === "Ads" && r.charge_month === "2026-08-01"), "base_amount"), 6763, 0.01);
 
   // Engine, September orders.
   const orders = of("my_orders").flatMap((r) => r.rows) as unknown as MyOrderRow[];
@@ -49,7 +53,8 @@ async function main() {
   const m = computeMyntra({
     orders: orders.filter((o) => o.order_date >= "2026-09-01" && o.order_date <= "2026-09-30"), settlement: sepS,
     rates: settle as unknown as never, returns: of("my_returns").flatMap((r) => r.rows) as unknown as MyReturnRow[],
-    invoices: inv as unknown as MyInvoiceRow[], skuOfId, products: [], settings: [],
+    invoices: [...new Map(inv.map((r) => [r.number, r])).values()] as unknown as MyInvoiceRow[], skuOfId, products: [], settings: [],
+    adStyles, skuOfStyle: new Map([...of("my_styles").flatMap((r) => r.skus).map((x) => [x.sku, x.asin] as const), ...orders.map((o) => [String((o as unknown as { style_id: string }).style_id), o.sku] as const)]),
     defaults: { default_cost_pct: 0.25, default_lead_time_days: 30, default_safety_days: 7, plan_horizon_days: 45 }, from: "2026-09-01", to: "2026-09-30",
   });
   const t = m.totals;
@@ -62,7 +67,11 @@ async function main() {
   expect("Engine Sep: revenue excl GST", t.revenue, 27286.38, 0.05);
   expect("Engine Sep: fees excl GST", t.fees, 1301.68, 0.05);
   expect("Engine Sep: paid", m.status.settled.amount, 13204.52, 0.05);
-  expect("Engine Sep: ads (Aug invoice not in Sep)", t.ads, 0, 0);
+  expect("Engine Sep: ads (two Sep invoices; Aug invoice not in Sep)", t.ads, 7628.3, 0.01);
+  expect("Engine Sep: ads split to almond oil 100 ml (CPSAO100)", m.rows.find((r) => r.sku === "CPSAO100")?.ads ?? 0, 3125 + 3883.9, 0.01);
+  expect("Engine Sep: ads not split (style without SKU)", m.adsUnallocated, 0, 0.01);
+  expect("Engine Sep: product ads + unsplit = total ads", m.rows.reduce((s2, r) => s2 + r.ads, 0) + m.adsUnallocated, 7628.3, 0.01);
+  expect("Engine Sep: ads report with no invoice (₹10,906.10)", m.unmatchedAdReports.reduce((s2, u) => s2 + u.total, 0), 10906.1, 0.01);
   console.log(`      Myntra margin ₹${t.myntraMargin.toFixed(0)} (${((t.myntraMargin / t.sales) * 100).toFixed(1)}% of sales); profit ₹${t.profit.toFixed(0)} (${(t.margin * 100).toFixed(1)}%)`);
   console.log(failures ? `\n${failures} check(s) failed` : "\nAll Myntra checks passed");
   process.exit(failures ? 1 : 0);

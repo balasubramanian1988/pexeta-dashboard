@@ -50,7 +50,7 @@ export default async function MyOverview({ account, period, team }: FcPageProps)
             <DailyBars data={result.daily.map((d) => ({ date: d.date, value: d.sales }))} format={(n) => compactRupees(n)} label="Myntra net sales by day" />
           </Section>
 
-          <Section title="Most profitable products" sub="Before ads, which Myntra bills for the whole account." action={<Link href={`${base}/profit${q}`} className="text-xs font-semibold text-brand hover:underline">All products</Link>}>
+          <Section title="Most profitable products" sub="After ads, where an ads-by-style report splits them by product." action={<Link href={`${base}/profit${q}`} className="text-xs font-semibold text-brand hover:underline">All products</Link>}>
             <div className="overflow-x-auto">
               <table className="tbl">
                 <thead><tr><th>Product</th><th className="num">Units</th><th className="num">Net sales</th><th className="num">Profit</th><th className="num">Margin</th></tr></thead>

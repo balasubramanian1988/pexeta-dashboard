@@ -40,7 +40,9 @@ const MYNTRA_CHECKLIST: { type: ReportType; when: string; where: string }[] = [
   { type: "my_orders", when: "Daily", where: "MDirect Orders report, last 7 days (CSV). Orders, status, customer price, Myntra margin, cancellation reasons." },
   { type: "my_settlement", when: "Weekly", where: "Settlement report (file \"SellerYearMonthWeekKey…\"), current and previous month, both the settled and the unsettled file. Payout per order, commission, shipping, UTRs; also brings the non-order deductions." },
   { type: "my_returns", when: "Weekly", where: "MDirect Returns report, last 30 days (CSV). RTOs and customer returns with reasons." },
-  { type: "my_invoice", when: "Monthly", where: "Tax invoices (PDF): the \"Marketing Claim\" ads invoice every month, plus commission, logistics and MDirect invoices for GST." },
+  { type: "my_invoice", when: "Monthly", where: "Tax invoices (PDF): the \"Marketing Claim\" ads invoice for each campaign every month, plus commission, logistics and MDirect invoices for GST." },
+  { type: "my_ads_styles", when: "Monthly", where: "Ads report by style (\"Styles - Page 1.csv\") for each campaign, for the same month as its Marketing Claim invoice. Splits the month's ads by product and gives ROAS. Linked to the invoice with the same total spend." },
+  { type: "my_styles", when: "Monthly, and when styles change", where: "Style dashboard export (XLSX). Links Myntra style IDs to your SKUs, so every style's ads reach the right product." },
 ];
 
 export default async function UploadsPage({ params }: { params: Promise<{ accountId: string }> }) {
