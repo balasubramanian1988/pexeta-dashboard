@@ -1,4 +1,4 @@
-// Recognises which Amazon report a file is from its column headers.
+// Recognises which marketplace report a file is from its column headers (Amazon, FirstCry).
 
 export type ReportType =
   | "orders"
@@ -14,7 +14,11 @@ export type ReportType =
   | "mtr_b2c"
   | "mtr_b2b"
   | "stock_transfer"
-  | "tax_document";
+  | "tax_document"
+  | "fc_sales"
+  | "fc_recon"
+  | "fc_returns"
+  | "fc_products";
 
 export const REPORT_LABEL: Record<ReportType, string> = {
   orders: "All Orders",
@@ -31,7 +35,19 @@ export const REPORT_LABEL: Record<ReportType, string> = {
   mtr_b2b: "MTR B2B (GST)",
   stock_transfer: "MTR Stock Transfer (GST)",
   tax_document: "Amazon tax invoice / credit note",
+  fc_sales: "FirstCry: Sales report",
+  fc_recon: "FirstCry: Vendor Reconciliation",
+  fc_returns: "FirstCry: Sale Return data",
+  fc_products: "FirstCry: All Product data",
 };
+
+export const AMAZON_REPORTS: ReportType[] = ["unified_transactions", "orders", "business_child", "fba_inventory", "listings", "sp_advertised", "sd_advertised", "sb_keyword", "sb_purchases", "returns", "mtr_b2c", "mtr_b2b", "stock_transfer", "tax_document"];
+export const FIRSTCRY_REPORTS: ReportType[] = ["fc_sales", "fc_recon", "fc_returns", "fc_products"];
+
+/** Which marketplace a report belongs to, so an Amazon file is never saved into a FirstCry account (or the other way round). */
+export function reportMarketplace(t: ReportType): "Amazon" | "FirstCry" {
+  return FIRSTCRY_REPORTS.includes(t) ? "FirstCry" : "Amazon";
+}
 
 /** Snapshot reports with no date column need a report date from the uploader. */
 export const NEEDS_REPORT_DATE: ReportType[] = ["business_child", "fba_inventory", "listings"];
@@ -41,6 +57,12 @@ export type Detection = { type: ReportType } | { type: null; reason: string };
 export function detectTable(headers: string[]): Detection {
   const h = new Set(headers.map((x) => x.trim().toLowerCase()));
   const has = (...cols: string[]) => cols.every((c) => h.has(c.toLowerCase()));
+
+  // FirstCry
+  if (has("poitem ids", "base cost", "payment advice no")) return { type: "fc_recon" };
+  if (has("sales return date", "poid", "reason", "subreason")) return { type: "fc_returns" };
+  if (has("poid", "orderdate", "productid", "mrp sales")) return { type: "fc_sales" };
+  if (has("productid", "vendorstylecode", "productname", "gst")) return { type: "fc_products" };
 
   if (has("date/time", "settlement id", "type", "order id")) return { type: "unified_transactions" };
   if (has("transaction type", "total product charges", "amazon fees"))

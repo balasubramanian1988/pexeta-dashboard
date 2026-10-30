@@ -7,6 +7,7 @@ import { dailyNetSales } from "@/lib/engine/summaries";
 import { compactRupees, count, dateLabel, percent, rupees } from "@/lib/format";
 import { getPeriod } from "@/lib/period";
 import { REPORT_LABEL, type ReportType } from "@/lib/parsers";
+import FcOverview from "./_firstcry/Overview";
 
 export const metadata = { title: "Overview" };
 
@@ -16,6 +17,7 @@ export default async function Overview({ params, searchParams }: { params: Promi
   const { accountId } = await params;
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
   const period = await getPeriod(account.id, await searchParams);
+  if (account.marketplace === "FirstCry") return <FcOverview account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   const [{ result, txns }, stock, fresh] = await Promise.all([
     getProfit(account, period.from, period.to),
     getStock(account, period.from, period.to, period.days),

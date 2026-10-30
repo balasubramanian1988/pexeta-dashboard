@@ -1,5 +1,5 @@
 // Runs the profit engine on ./test-data and compares with the Root and Soil workbook (1–22 Oct 2026).
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parseUpload, type ParseResult } from "../src/lib/parsers";
 import { computeProfit } from "../src/lib/engine/profit";
@@ -10,7 +10,7 @@ type Ok = Extract<ParseResult, { ok: true }>;
 async function main() {
   const dir = join(process.cwd(), "test-data");
   const all: Ok[] = [];
-  for (const f of readdirSync(dir)) for (const r of await parseUpload(f, new Uint8Array(readFileSync(join(dir, f))), "2026-10-22")) if (r.ok) all.push(r);
+  for (const f of readdirSync(dir).filter((x) => statSync(join(dir, x)).isFile())) for (const r of await parseUpload(f, new Uint8Array(readFileSync(join(dir, f))), "2026-10-22")) if (r.ok) all.push(r);
   const u = all.find((r) => r.type === "unified_transactions")!;
   const txns = (u.rows as unknown as (TxnRow & { posted_at: string })[]).filter((t) => t.posted_date >= "2026-10-01" && t.posted_date <= "2026-10-22");
   const ads = all.filter((r) => (r.type === "sp_advertised" || r.type === "sd_advertised") && r.periodStart === "2026-10-01").flatMap((r) => r.rows) as unknown as AdRow[];

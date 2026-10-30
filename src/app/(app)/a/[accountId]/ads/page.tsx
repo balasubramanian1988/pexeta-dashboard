@@ -5,6 +5,7 @@ import { getProfit } from "@/lib/data";
 import { AD_TYPE_LABEL, aggregateAds, dailyAdSpend } from "@/lib/engine/summaries";
 import { compactRupees, count, percent, rupees } from "@/lib/format";
 import { getPeriod } from "@/lib/period";
+import { notFound } from "next/navigation";
 
 export const metadata = { title: "Ads" };
 
@@ -13,6 +14,7 @@ const ratio = (a: number, b: number) => (b ? a / b : NaN);
 export default async function AdsPage({ params, searchParams }: { params: Promise<{ accountId: string }>; searchParams: Promise<{ from?: string; to?: string }> }) {
   const { accountId } = await params;
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
+  if (account.marketplace === "FirstCry") notFound(); // FirstCry has no ads or GST document reports here yet
   const period = await getPeriod(account.id, await searchParams);
   const { result, ads, sbPurchases } = await getProfit(account, period.from, period.to);
   const t = result.totals;

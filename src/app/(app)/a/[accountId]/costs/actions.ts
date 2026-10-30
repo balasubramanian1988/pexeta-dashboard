@@ -19,7 +19,7 @@ export async function saveProductSetting(_: SaveState, form: FormData): Promise<
   if (!viewer.canEditCosts) return { ok: false, message: "Your login can view costs but not change them." };
   const account = await getAccount(String(form.get("accountId")));
   const asin = String(form.get("asin") ?? "");
-  if (!/^[A-Z0-9]{10}$/.test(asin)) return { ok: false, message: "Unknown product." };
+  if (!/^[A-Za-z0-9_-]{4,40}$/.test(asin)) return { ok: false, message: "Unknown product." }; // Amazon ASIN or FirstCry product ID
 
   const admin = createAdminClient();
   const { data: current } = await admin.from("sd_product_settings").select("cost_pct, cost_per_unit, lead_time_days, warehouse_stock").eq("account_id", account.id).eq("asin", asin).maybeSingle();

@@ -6,6 +6,8 @@ import { computeProfit } from "./engine/profit";
 import { computeStock } from "./engine/stock";
 import type { AccountDefaults, AdRow, InventoryRow, ListingRow, ProductRow, ProductSetting, SbPurchaseRow, SkuRow, TxnRow } from "./engine/types";
 import type { Account } from "./auth";
+import { computeFcStock, computeFirstCry, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
+import { addDays } from "./period";
 
 type Sb = Awaited<ReturnType<typeof createClient>>;
 type Res<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
@@ -92,3 +94,44 @@ export async function getFreshness(accountId: string) {
   for (const u of data ?? []) if (!out[u.report_type]) out[u.report_type] = { periodEnd: u.period_end, uploadedAt: u.created_at };
   return out;
 }
+
+// ---------- FirstCry ----------
+
+const FC_RECON_COLS = "poid, poitem_id, product_id, order_date, delivery_date, return_date, quantity, mrp, base_cost, gross_amount, gst_rate, gst_amount, total, vendor_invoice, payment_advice, debit_note, sr_qty, sr_gross, sr_total, rto_qty, rto_gross, rto_total";
+const FC_RECON_NUM = ["quantity", "mrp", "base_cost", "gross_amount", "gst_rate", "gst_amount", "total", "sr_qty", "sr_gross", "sr_total", "rto_qty", "rto_gross", "rto_total"];
+
+export const getFcMaster = cache(async (accountId: string) => {
+  const sb = await createClient();
+  const [products, settings] = await Promise.all([
+    fetchAll<FcProduct>((f, t) => sb.from("sd_products").select("asin, title, short_name, mrp, gst_rate, style_code").eq("account_id", accountId).range(f, t)),
+    fetchAll<ProductSetting>((f, t) => sb.from("sd_product_settings").select("asin, cost_pct, cost_per_unit, lead_time_days, warehouse_stock").eq("account_id", accountId).range(f, t)),
+  ]);
+  return { products: products.map((p) => ({ ...p, mrp: p.mrp == null ? null : Number(p.mrp), gst_rate: p.gst_rate == null ? null : Number(p.gst_rate) })), settings };
+});
+
+async function fcSales(sb: Sb, accountId: string, from: string, to: string) {
+  const rows = await fetchAll<FcSaleRow>((f, t) => sb.from("sd_fc_sales").select("poid, product_id, order_date, quantity, mrp, mrp_sales").eq("account_id", accountId).gte("order_date", from).lte("order_date", to).order("row_key").range(f, t));
+  return numify(rows, ["quantity", "mrp", "mrp_sales"]);
+}
+
+export const getFirstCry = cache(async (account: Account, from: string, to: string) => {
+  const sb = await createClient();
+  const [sales, recon, rates, returns, master] = await Promise.all([
+    fcSales(sb, account.id, from, to),
+    fetchAll<FcReconRow>((f, t) => sb.from("sd_fc_recon").select(FC_RECON_COLS).eq("account_id", account.id).gte("order_date", from).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, FC_RECON_NUM)),
+    // Payout history for estimates and the usual payout rate: the 180 days up to the end of the period.
+    fetchAll<FcRateRow>((f, t) => sb.from("sd_fc_recon").select("product_id, order_date, base_cost, mrp, gst_rate").eq("account_id", account.id).gte("order_date", addDays(to, -179)).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["base_cost", "mrp", "gst_rate"])),
+    fetchAll<FcReturnRow>((f, t) => sb.from("sd_fc_returns").select("poid, product_id, return_date, quantity, reason, sub_reason").eq("account_id", account.id).gte("return_date", from).lte("return_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["quantity"])),
+    getFcMaster(account.id),
+  ]);
+  const result = computeFirstCry({ sales, recon, rates, products: master.products, settings: master.settings, defaults: defaultsOf(account) });
+  return { result, returns, master, hasSales: sales.length > 0, hasRecon: recon.length > 0 };
+});
+
+export const getFcStock = cache(async (account: Account, from: string, to: string, days: number) => {
+  const sb = await createClient();
+  const [sales, master] = await Promise.all([fcSales(sb, account.id, from, to), getFcMaster(account.id)]);
+  const units = new Map<string, number>();
+  for (const s of sales) if (s.quantity > 0) units.set(s.product_id, (units.get(s.product_id) ?? 0) + s.quantity);
+  return computeFcStock({ unitsById: units, periodDays: days, products: master.products, settings: master.settings, defaults: defaultsOf(account) });
+});

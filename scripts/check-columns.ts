@@ -1,5 +1,5 @@
 // Checks every parsed row's keys exist as columns of its sd_ table in supabase/schema.sql.
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parseUpload } from "../src/lib/parsers";
 
@@ -13,9 +13,11 @@ for (const m of sql.matchAll(/create table if not exists (\w+) \(([\s\S]*?)\n\);
 (async () => {
   let bad = 0;
   const seen = new Set<string>();
-  for (const f of readdirSync("test-data")) for (const r of await parseUpload(f, new Uint8Array(readFileSync(join("test-data", f))), "2026-10-22")) {
+  const files = ["test-data", "test-data/firstcry"].flatMap((d) => { try { return readdirSync(d).map((f) => join(d, f)).filter((f) => statSync(f).isFile()); } catch { return []; } });
+  for (const path of files) for (const r of await parseUpload(path.split("/").pop()!, new Uint8Array(readFileSync(path)), "2026-10-22")) {
     if (!r.ok || !r.rows.length || seen.has(r.type)) continue;
     seen.add(r.type);
+    if (!r.rows.length) continue;
     const c = cols.get(r.table);
     if (!c) { console.log("NO TABLE", r.table); bad++; continue; }
     const missing = Object.keys(r.rows[0]).filter((k) => !c.has(k));

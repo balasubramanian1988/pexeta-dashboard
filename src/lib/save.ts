@@ -15,10 +15,17 @@ const CONFLICT: Record<string, string> = {
   sd_tax_lines: "account_id,row_hash",
   sd_stock_transfers: "account_id,row_hash",
   sd_tax_documents: "account_id,number",
+  sd_fc_sales: "account_id,row_key",
+  sd_fc_recon: "account_id,row_key",
+  sd_fc_returns: "account_id,row_key",
 };
+// FirstCry reconciliation: a unit's invoice, payment advice and return debits arrive over several downloads.
+// An older or narrower file must not wipe what a newer one recorded, so blanks never overwrite values.
+const FC_KEEP_TEXT = ["vendor_invoice", "payment_advice", "debit_note", "ship_date", "delivery_date", "return_date"];
+const FC_KEEP_NUM = ["sr_qty", "sr_total", "sr_gross", "rto_qty", "rto_total", "rto_gross"];
 const SNAPSHOT = new Set(["sd_inventory", "sd_listings"]);
 // Reports whose SKU → ASIN pairs and fulfilment channel are authoritative.
-const SKU_SOURCE = new Set(["listings", "orders", "fba_inventory"]);
+const SKU_SOURCE = new Set(["listings", "orders", "fba_inventory", "fc_products"]);
 const CHUNK = 500;
 
 async function chunked(rows: DbRow[], fn: (part: DbRow[]) => PromiseLike<{ error: { message: string } | null }>) {
@@ -42,6 +49,18 @@ export async function saveParsed(admin: SupabaseClient, accountId: string, p: Pa
   if (p.skus.length) {
     const skus = uniqueBy(p.skus.filter((s) => s.sku && s.asin).map((s) => ({ account_id: accountId, ...s })), ["sku"]);
     await chunked(skus, (part) => admin.from("sd_skus").upsert(part, { onConflict: "account_id,sku", ignoreDuplicates: !SKU_SOURCE.has(p.type) }));
+  }
+  if (p.type === "fc_products") {
+    // The product list is authoritative for names, MRP, GST rate and status. Keep a short name the team has edited.
+    const ids = [...new Set(p.products.map((x) => x.asin))];
+    const { data: existing } = await admin.from("sd_products").select("asin, title, short_name").eq("account_id", accountId).in("asin", ids);
+    const edited = new Map((existing ?? []).filter((e) => e.short_name && e.short_name !== shortName(e.title ?? "")).map((e) => [e.asin, e.short_name as string]));
+    const rows = uniqueBy(p.products.map((x) => ({
+      account_id: accountId, asin: x.asin, title: x.title, short_name: edited.get(x.asin) ?? shortName(x.title), mrp: x.mrp ?? null,
+      style_code: x.style_code ?? "", gst_rate: x.gst_rate ?? null, status: x.status ?? "", category: x.category ?? "",
+    })), ["asin"]);
+    await chunked(rows, (part) => admin.from("sd_products").upsert(part, { onConflict: "account_id,asin" }));
+    return { saved: rows.length, warnings };
   }
   if (p.products.length) {
     const byAsin = new Map<string, { asin: string; title: string; mrp?: number | null }>();
@@ -87,6 +106,23 @@ export async function saveParsed(admin: SupabaseClient, accountId: string, p: Pa
     rows = uniqueBy(rows, ["sku"]);
     await chunked(rows, (part) => admin.from(p.table).insert(part));
     return { saved: rows.length, warnings };
+  }
+
+  if (p.table === "sd_fc_recon") {
+    rows = uniqueBy(rows, ["row_key"]);
+    const prior = new Map<string, DbRow>();
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const keys = rows.slice(i, i + CHUNK).map((r) => String(r.row_key));
+      const { data, error } = await admin.from("sd_fc_recon").select(["row_key", ...FC_KEEP_TEXT, ...FC_KEEP_NUM].join(", ")).eq("account_id", accountId).in("row_key", keys);
+      if (error) throw new Error(error.message);
+      for (const d of (data ?? []) as unknown as DbRow[]) prior.set(String(d.row_key), d);
+    }
+    for (const r of rows) {
+      const old = prior.get(String(r.row_key));
+      if (!old) continue;
+      for (const k of FC_KEEP_TEXT) if (r[k] == null && old[k] != null) r[k] = old[k];
+      for (const k of FC_KEEP_NUM) if (!Number(r[k]) && Number(old[k])) r[k] = Number(old[k]);
+    }
   }
 
   const conflict = CONFLICT[p.table];

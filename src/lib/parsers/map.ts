@@ -1,6 +1,7 @@
 // Maps each recognised report into rows for its sd_ table. Pure functions: no database access.
 import type { ReportType } from "./detect";
 import type { Table } from "./read";
+import { fcProducts, fcRecon, fcReturns, fcSales } from "./firstcry";
 import {
   calendarDate, istDate, istMonth, num, parseTimestamp, parseUnifiedDate, parseUsDate, pct, rowHasher, shortName, str, type Row,
 } from "./util";
@@ -13,7 +14,8 @@ export type Parsed = {
   rows: DbRow[];
   periodStart: string | null;
   periodEnd: string | null;
-  products: { asin: string; title: string; mrp?: number | null }[];
+  // Product details. FirstCry's product list also carries style code, GST rate, status and category.
+  products: { asin: string; title: string; mrp?: number | null; style_code?: string; gst_rate?: number | null; status?: string; category?: string }[];
   skus: { sku: string; asin: string; fulfillment: string }[];
   warnings: string[];
 };
@@ -442,6 +444,10 @@ export function mapTable(type: ReportType, t: Table, ctx: Ctx): Parsed {
     case "mtr_b2b": return mtr(t, "B2B");
     case "stock_transfer": return stockTransfer(t);
     case "tax_document": throw new Error("PDFs are mapped with taxDocument()");
+    case "fc_sales": return fcSales(t);
+    case "fc_recon": return fcRecon(t);
+    case "fc_returns": return fcReturns(t);
+    case "fc_products": return fcProducts(t);
   }
 }
 

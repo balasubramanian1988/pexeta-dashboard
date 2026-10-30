@@ -3,10 +3,20 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { BadgeIndianRupee, BarChart3, Boxes, Building2, FileText, Gauge, Megaphone, Menu, Tags, Upload, Users, X, LogOut, KeyRound } from "lucide-react";
+import { BadgeIndianRupee, BarChart3, Boxes, Building2, FileText, Gauge, Megaphone, Menu, Tags, Upload, Users, Wallet, X, LogOut, KeyRound } from "lucide-react";
 import Logo from "./Logo";
 
-type Props = { name: string; team: boolean; accounts: { id: string; name: string }[] };
+type Props = { name: string; team: boolean; accounts: { id: string; name: string; marketplace: string }[] };
+
+// FirstCry pays a fixed base cost per unit (no fee lines or ads data), so its tabs differ from Amazon's.
+const FIRSTCRY_TABS = [
+  { slug: "", label: "Overview", icon: Gauge },
+  { slug: "profit", label: "Profitability", icon: BadgeIndianRupee },
+  { slug: "revenue", label: "Orders & returns", icon: BarChart3 },
+  { slug: "payments", label: "Payments", icon: Wallet },
+  { slug: "stock", label: "45-day stock plan", icon: Boxes },
+  { slug: "costs", label: "Product costs", icon: Tags },
+];
 
 const TABS = [
   { slug: "", label: "Overview", icon: Gauge },
@@ -47,7 +57,7 @@ export default function Sidebar({ name, team, accounts }: Props) {
         {account && (
           <>
             <div className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{account.name}</div>
-            {TABS.map((t) => {
+            {(account.marketplace === "FirstCry" ? FIRSTCRY_TABS : TABS).map((t) => {
               const href = `/a/${account.id}${t.slug ? `/${t.slug}` : ""}`;
               const active = t.slug ? path.startsWith(href) : path === href;
               return item(`${href}${t.slug === "costs" || t.slug === "gst" ? "" : range}`, t.label, t.icon, active);

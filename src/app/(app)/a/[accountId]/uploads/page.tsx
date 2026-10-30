@@ -27,6 +27,14 @@ const CHECKLIST: { type: ReportType; when: string; where: string }[] = [
   { type: "tax_document", when: "Monthly", where: "Reports › Tax Document Library › Seller Fee Tax Invoices, and the Advertising invoice (PDFs)" },
 ];
 
+// FirstCry vendor panel downloads (Oct 2026). Overlapping date ranges are fine: rows are keyed, so nothing double counts.
+const FIRSTCRY_CHECKLIST: { type: ReportType; when: string; where: string }[] = [
+  { type: "fc_sales", when: "Daily", where: "Sales report (file name starts \"dashboardsale\"), last 7 days. Gives units and orders at MRP." },
+  { type: "fc_recon", when: "Weekly", where: "Vendor Reconciliation, order dates covering the last 45 days. Gives what FirstCry pays (base cost), deliveries, payment advices and RTO / return debits. Re-downloading older weeks updates their status." },
+  { type: "fc_returns", when: "Weekly", where: "Sale Return data, last 30 days. Gives customer return reasons." },
+  { type: "fc_products", when: "Monthly, and whenever products, MRP or GST change", where: "All Product data. Gives product names, style codes, MRP and GST rates." },
+];
+
 export default async function UploadsPage({ params }: { params: Promise<{ accountId: string }> }) {
   await requireTeam();
   const { accountId } = await params;
@@ -37,24 +45,25 @@ export default async function UploadsPage({ params }: { params: Promise<{ accoun
     sb.from("sd_uploads").select("id, report_type, file_name, period_start, period_end, rows_saved, status, message, created_at").eq("account_id", account.id).order("created_at", { ascending: false }).limit(40),
   ]);
   const yesterday = addDays(todayIst(), -1);
+  const fc = account.marketplace === "FirstCry";
 
   return (
     <>
       <PageHeader eyebrow={`${account.client_name} · ${account.marketplace}`} title="Upload reports" sub={`Seller ID ${account.seller_id || "not set"}. Re-uploading a report, or one that overlaps an earlier one, updates the data without double counting.`} />
-      <Section title="Upload"><Uploader accountId={account.id} defaultDate={yesterday} /></Section>
+      <Section title="Upload"><Uploader accountId={account.id} defaultDate={yesterday} marketplace={account.marketplace} /></Section>
 
-      <Section title="What to upload" sub="Download from Seller Central with this account selected.">
+      <Section title="What to upload" sub={fc ? "Download from the FirstCry vendor panel. Upload the files exactly as downloaded (XLSX)." : "Download from Seller Central with this account selected."}>
         <div className="overflow-x-auto">
           <table className="tbl">
-            <thead><tr><th>Report</th><th>How often</th><th>Where in Seller Central</th><th>Data up to</th></tr></thead>
+            <thead><tr><th>Report</th><th>How often</th><th>{fc ? "What to download" : "Where in Seller Central"}</th><th>Data up to</th></tr></thead>
             <tbody>
-              {CHECKLIST.map((c) => {
+              {(fc ? FIRSTCRY_CHECKLIST : CHECKLIST).map((c) => {
                 const f = fresh[c.type];
                 const stale = c.when === "Daily" && (!f?.periodEnd || f.periodEnd < addDays(yesterday, -1));
                 return (
                   <tr key={c.type}>
                     <td className="whitespace-nowrap font-medium">{REPORT_LABEL[c.type]}</td><td>{c.when}</td><td className="text-xs text-muted">{c.where}</td>
-                    <td className="whitespace-nowrap">{f ? dateLabel(f.periodEnd) : "–"} {stale && <StatusPill tone="amber">Due</StatusPill>}</td>
+                    <td className="whitespace-nowrap">{f ? (f.periodEnd ? dateLabel(f.periodEnd) : dateLabel(f.uploadedAt)) : "–"} {stale && <StatusPill tone="amber">Due</StatusPill>}</td>
                   </tr>
                 );
               })}

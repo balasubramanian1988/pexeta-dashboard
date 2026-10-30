@@ -65,11 +65,12 @@ export const getAccount = cache(async (accountId: string): Promise<Account> => {
 });
 
 /** Accounts the viewer may see, for navigation. */
-export async function listAccounts(): Promise<{ id: string; name: string; client_id: string }[]> {
+export async function listAccounts(): Promise<{ id: string; name: string; client_id: string; marketplace: string }[]> {
   const v = await getViewer();
   const supabase = await createClient();
-  let q = supabase.from("sd_accounts").select("id, name, client_id").eq("active", true).order("name");
+  let q = supabase.from("sd_accounts").select("id, name, client_id, marketplaces(name)").eq("active", true).order("name");
   if (v.kind === "seller") q = q.eq("client_id", v.clientId);
   const { data } = await q;
-  return data ?? [];
+  const one = (x: unknown) => (Array.isArray(x) ? x[0] : x) as { name?: string } | null;
+  return (data ?? []).map((a) => ({ id: a.id, name: a.name, client_id: a.client_id, marketplace: one(a.marketplaces)?.name ?? "" }));
 }

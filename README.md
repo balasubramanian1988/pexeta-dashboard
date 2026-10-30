@@ -1,6 +1,8 @@
 # Pexeta Seller Dashboard
 
-`dashboard.pexeta.in`: profit, revenue, ads, a 45-day stock plan and GST documents for Pexeta's marketplace sellers. Amazon.in first (pilot: Root and Soil); Flipkart, Myntra, FirstCry and quick commerce next.
+`dashboard.pexeta.in`: profit, revenue, ads, a 45-day stock plan and GST documents for Pexeta's marketplace sellers. Amazon.in and FirstCry are live (pilot: Root and Soil); Flipkart, Myntra and quick commerce next.
+
+Each brand is opted into the marketplaces it sells on (**Brands** page); each marketplace is one account with its own tabs.
 
 - **Sellers** sign in with email and password and see only their own brand.
 - **Pexeta team** signs in with Google (anyone active in `team_members`, shared with Pexeta Ops), sees every account, and uploads reports.
@@ -19,9 +21,29 @@
 
 Totals were checked against the Root and Soil workbook for 1–22 Oct 2026 (net sales ₹33,68,273.51, ad spend ₹2,01,488, profit ₹17.14 L, 50.9%).
 
+## FirstCry (marketplace / dropship)
+
+FirstCry pays a fixed **base cost** per delivered unit plus GST; there are no commission or shipping lines, and RTO / customer returns are recovered by debit note. So:
+
+- Revenue (excl. GST) = base cost − RTO base − return base, from Vendor Reconciliation. Orders not yet in a reconciliation file are estimated at the product's latest base cost.
+- Profit = revenue − product cost (seller's cost per unit, or a % of MRP; default 25%).
+- Payout rate check: base cost ÷ MRP excl. GST per product vs the account's usual rate (61.75% for Root and Soil). Flags products paid less, e.g. when a GST rate changed but the base cost was not recalculated.
+- Stock plan from demand (stock sits in the seller's warehouse; warehouse count optional).
+
+Tabs: Overview, Profitability, Orders & returns, Payments, 45-day stock plan, Product costs.
+
+| Report (FirstCry vendor panel) | How often | Range |
+| --- | --- | --- |
+| Sales report (`dashboardsale_…xlsx`) | Daily | Last 7 days |
+| Vendor Reconciliation | Weekly | Order dates covering the last 45 days, so deliveries, payments and RTOs update |
+| Sale Return data | Weekly | Last 30 days |
+| All Product data | Monthly, and when products, MRP or GST change | Whole list |
+
+Overlapping downloads never double count: sales and returns are keyed by order + product, reconciliation by PO item + unit, and a later file never blanks an invoice, payment advice or return recorded earlier.
+
 ## Setup (once)
 
-1. **Supabase** (the Pexeta Ops project): SQL editor → run `supabase/schema.sql`. It runs after the ops schema and is safe to run again. It creates the `sd_` tables, row-level security, the private `sd-files` bucket, and seeds Root and Soil (seller ID A20LNIW0086CNE, six GSTINs).
+1. **Supabase** (the Pexeta Ops project): SQL editor → run `supabase/schema.sql` (existing installs: run `002_brand_marketplaces.sql` and `003_firstcry.sql` instead). It runs after the ops schema and is safe to run again. It creates the `sd_` tables, row-level security, the private `sd-files` bucket, and seeds Root and Soil (seller ID A20LNIW0086CNE, six GSTINs).
 2. **Supabase Auth**:
    - URL configuration → add `https://dashboard.pexeta.in/auth/callback` to Redirect URLs.
    - Providers → Email: keep enabled, keep **Confirm email** on. Turn **off** "Allow new users to sign up" for email if your project allows it (seller logins are created by the team). Google stays as it is for ops.
@@ -48,9 +70,9 @@ The "Transactions for statement period" daily summaries are rejected on purpose:
 ## Checks
 
 ```bash
-npm run test          # parsers vs independently computed totals, engine vs workbook, parser columns vs schema
+npm run test          # parsers vs independently computed totals, engine vs workbook, FirstCry parsers + engine, parser columns vs schema
 ```
 
-`test-data/` holds client files and is git-ignored. Put the Root and Soil files there to run the checks.
+`test-data/` holds client files and is git-ignored. Put the Root and Soil Amazon files there, and the FirstCry files in `test-data/firstcry/`, to run the checks.
 
 **Local end-to-end** (optional): a Postgres with `supabase/test/supabase_stub.sql`, the ops schema and `supabase/schema.sql`, plus PostgREST on port 3009 with `jwt-secret = "local-e2e-secret-local-e2e-secret-0123456789"`; then `npx tsx --conditions=react-server scripts/e2e-local.ts`. It saves every test file through the real save layer, reads back as the seller with row-level security on, and checks totals, GST by GSTIN and isolation between sellers.

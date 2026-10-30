@@ -5,12 +5,14 @@ import { getAccount, getViewer } from "@/lib/auth";
 import { dateLabel, monthLabel, rupees } from "@/lib/format";
 import { gstMonth, gstMonths } from "@/lib/gst";
 import { REPORT_LABEL, type ReportType } from "@/lib/parsers";
+import { notFound } from "next/navigation";
 
 export const metadata = { title: "GST & documents" };
 
 export default async function GstPage({ params, searchParams }: { params: Promise<{ accountId: string }>; searchParams: Promise<{ month?: string }> }) {
   const { accountId } = await params;
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
+  if (account.marketplace === "FirstCry") notFound(); // FirstCry has no ads or GST document reports here yet
   const months = await gstMonths(account.id);
   const sp = await searchParams;
   const month = sp.month && /^\d{4}-\d{2}$/.test(sp.month) && months.includes(`${sp.month}-01`) ? `${sp.month}-01` : months[0];

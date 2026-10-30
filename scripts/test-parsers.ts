@@ -1,6 +1,6 @@
 // Parses every file in ./test-data and checks totals against figures calculated independently
 // (Python/pandas) from the same Root and Soil files on 23 Oct 2026. Run: npm run test:parsers
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parseUpload, type ParseResult } from "../src/lib/parsers";
 
@@ -18,7 +18,7 @@ function expect(label: string, got: number, want: number, tol = 0.6) {
 
 async function main() {
   const results: Ok[] = [];
-  for (const f of readdirSync(DIR).sort()) {
+  for (const f of readdirSync(DIR).sort().filter((x) => statSync(join(DIR, x)).isFile())) {
     const res = await parseUpload(f, new Uint8Array(readFileSync(join(DIR, f))), REPORT_DATE);
     for (const r of res) {
       if (!r.ok) { console.log(`skip  ${r.fileName}: ${r.reason}`); continue; }

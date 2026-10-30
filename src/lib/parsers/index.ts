@@ -24,5 +24,5 @@ export async function parseUpload(fileName: string, data: Uint8Array, reportDate
   return out;
 }
 
-export { REPORT_LABEL, NEEDS_REPORT_DATE, type ReportType } from "./detect";
+export { REPORT_LABEL, NEEDS_REPORT_DATE, AMAZON_REPORTS, FIRSTCRY_REPORTS, reportMarketplace, type ReportType } from "./detect";
 export type { Parsed, DbRow } from "./map";

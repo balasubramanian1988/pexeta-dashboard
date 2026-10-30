@@ -6,6 +6,7 @@ import { dailyNetSales } from "@/lib/engine/summaries";
 import { compactRupees, count, percent, rupees } from "@/lib/format";
 import { getPeriod } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
+import FcOrders from "../_firstcry/Orders";
 
 export const metadata = { title: "Revenue" };
 
@@ -15,6 +16,7 @@ export default async function RevenuePage({ params, searchParams }: { params: Pr
   const { accountId } = await params;
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
   const period = await getPeriod(account.id, await searchParams);
+  if (account.marketplace === "FirstCry") return <FcOrders account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   const sb = await createClient();
   const [{ result, txns }, orders] = await Promise.all([
     getProfit(account, period.from, period.to),

@@ -24,7 +24,7 @@ export default function PeriodPicker({ period, basePath }: { period: Period; bas
         <input type="date" name="to" defaultValue={period.to} className="field !w-auto !py-1 !text-xs" aria-label="To" />
         <button className="btn btn-outline !px-2.5 !py-1 !text-xs">Show</button>
       </form>
-      {period.latest && <div className="text-[11px] text-faint">Settled Amazon data up to {dateLabel(period.latest)}</div>}
+      {period.latest && <div className="text-[11px] text-faint">Data up to {dateLabel(period.latest)}</div>}
     </div>
   );
 }

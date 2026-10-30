@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { getAccount, getViewer } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { parseUpload, REPORT_LABEL } from "@/lib/parsers";
+import { parseUpload, REPORT_LABEL, reportMarketplace } from "@/lib/parsers";
 import { saveParsed } from "@/lib/save";
 
 export const runtime = "nodejs";
@@ -38,12 +38,20 @@ export async function POST(req: Request) {
       outcomes.push({ fileName: r.fileName, ok: false, label: "Not recognised", rows: 0, message: r.reason, period: "" });
       continue;
     }
+    // Never save one marketplace's report into another marketplace's account.
+    const belongs = reportMarketplace(r.type);
+    if ((account.marketplace === "Amazon" || account.marketplace === "FirstCry") && belongs !== account.marketplace) {
+      const reason = `This is a ${belongs} report, but this is the ${account.marketplace} account. Upload it to ${account.client_name}'s ${belongs} account instead.`;
+      await admin.from("sd_uploads").insert({ account_id: account.id, report_type: r.type, file_name: r.fileName, storage_path: body.path, status: "failed", message: reason, uploaded_by: viewer.memberId });
+      outcomes.push({ fileName: r.fileName, ok: false, label: REPORT_LABEL[r.type], rows: 0, message: reason, period: "" });
+      continue;
+    }
     const { data: up } = await admin.from("sd_uploads").insert({
       account_id: account.id, report_type: r.type, file_name: r.fileName, storage_path: body.path, report_date: reportDate,
-      period_start: r.periodStart, period_end: r.periodEnd, rows_parsed: r.rows.length, status: "processing", uploaded_by: viewer.memberId,
+      period_start: r.periodStart, period_end: r.periodEnd, rows_parsed: r.rows.length || r.products.length, status: "processing", uploaded_by: viewer.memberId,
     }).select("id").single();
     try {
-      if (!r.rows.length) throw new Error(r.warnings.join(" ") || "No data rows in this report.");
+      if (!r.rows.length && !(r.type === "fc_products" && r.products.length)) throw new Error(r.warnings.join(" ") || "No data rows in this report.");
       const { saved, warnings } = await saveParsed(admin, account.id, r);
       const message = warnings.join(" ");
       if (up) await admin.from("sd_uploads").update({ status: "done", rows_saved: saved, message }).eq("id", up.id);
