@@ -52,6 +52,8 @@ create table if not exists sd_accounts (
   created_at timestamptz not null default now()
 );
 
+create unique index if not exists sd_accounts_client_marketplace on sd_accounts (client_id, marketplace_id);
+
 create table if not exists sd_gstins (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references clients(id) on delete cascade,

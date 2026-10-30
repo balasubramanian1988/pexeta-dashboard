@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
-import { createAccount, createSellerLogin, resetSellerPassword, type ActionState } from "./actions";
+import { useActionState, useState } from "react";
+import { addBrandMarketplace, createBrand, createSellerLogin, resetSellerPassword, type ActionState } from "./actions";
 
 type Opt = { id: string; name: string };
 
@@ -15,18 +15,59 @@ function Result({ state }: { state: ActionState }) {
   );
 }
 
-export function NewAccountForm({ clients, marketplaces }: { clients: Opt[]; marketplaces: Opt[] }) {
-  const [state, action, pending] = useActionState<ActionState, FormData>(createAccount, null);
+/** New brand: name plus the marketplaces it sells on. Only the ticked marketplaces appear on its dashboard. */
+export function NewBrandForm({ clients, marketplaces }: { clients: Opt[]; marketplaces: Opt[] }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(createBrand, null);
+  const [ticked, setTicked] = useState<Record<string, boolean>>({});
   return (
     <form action={action} className="px-4 py-4">
-      <div className="grid gap-3 sm:grid-cols-4">
-        <label><span className="label">Client</span><select name="client_id" className="field" required defaultValue=""><option value="" disabled>Choose</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <label><span className="label">Marketplace</span><select name="marketplace_id" className="field" required defaultValue=""><option value="" disabled>Choose</option>{marketplaces.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
-        <label><span className="label">Account name</span><input name="name" className="field" placeholder="Brand — Amazon.in" required /></label>
-        <label><span className="label">Seller ID (optional)</span><input name="seller_id" className="field" placeholder="A20LNIW0086CNE" /></label>
-      </div>
-      <button disabled={pending} className="btn btn-dark mt-3">{pending ? "Adding…" : "Add account"}</button>
+      <label className="block max-w-md">
+        <span className="label">Brand name</span>
+        <input name="brand" className="field" list="known-brands" placeholder="e.g. Root and Soil" required />
+        <datalist id="known-brands">{clients.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+        <span className="mt-1 block text-xs text-faint">If the brand is already a client in Pexeta Ops, pick it so both tools stay linked.</span>
+      </label>
+      <fieldset className="mt-4">
+        <legend className="label">Marketplaces the brand sells on</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {marketplaces.map((m) => (
+            <div key={m.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line px-3 py-2">
+              <label className="flex min-h-[28px] items-center gap-2 text-sm font-medium">
+                <input type="checkbox" name="marketplace_id" value={m.id} onChange={(e) => setTicked((t) => ({ ...t, [m.id]: e.target.checked }))} />
+                {m.name}
+              </label>
+              {ticked[m.id] && <input name={`seller_${m.id}`} className="field max-w-[220px] flex-1 py-1.5 text-xs" placeholder="Seller ID (optional)" aria-label={`${m.name} seller ID`} />}
+            </div>
+          ))}
+        </div>
+      </fieldset>
+      <button disabled={pending} className="btn btn-dark mt-4">{pending ? "Adding…" : "Add brand"}</button>
       <Result state={state} />
+    </form>
+  );
+}
+
+/** Opt an existing brand into another marketplace, including one not on the list yet. */
+export function AddMarketplaceForm({ clientId, marketplaces }: { clientId: string; marketplaces: Opt[] }) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(addBrandMarketplace, null);
+  const [choice, setChoice] = useState("");
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-3 px-4 py-3">
+      <input type="hidden" name="client_id" value={clientId} />
+      <label className="min-w-[180px]">
+        <span className="label">Marketplace</span>
+        <select name="marketplace_id" className="field" required value={choice} onChange={(e) => setChoice(e.target.value)}>
+          <option value="" disabled>Choose</option>
+          {marketplaces.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          <option value="new">A marketplace not on this list…</option>
+        </select>
+      </label>
+      {choice === "new" && (
+        <label className="min-w-[180px]"><span className="label">New marketplace name</span><input name="new_marketplace" className="field" placeholder="e.g. Meesho" required /></label>
+      )}
+      <label className="min-w-[180px]"><span className="label">Seller ID (optional)</span><input name="seller_id" className="field" /></label>
+      <button disabled={pending} className="btn btn-primary">{pending ? "Adding…" : "Add marketplace"}</button>
+      <div className="w-full"><Result state={state} /></div>
     </form>
   );
 }

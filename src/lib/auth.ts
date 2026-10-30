@@ -49,11 +49,11 @@ export const getAccount = cache(async (accountId: string): Promise<Account> => {
   const supabase = await createClient();
   const { data } = await supabase
     .from("sd_accounts")
-    .select("id, client_id, name, seller_id, default_cost_pct, default_lead_time_days, default_safety_days, plan_horizon_days, clients(name), marketplaces(name)")
+    .select("id, client_id, name, seller_id, active, default_cost_pct, default_lead_time_days, default_safety_days, plan_horizon_days, clients(name), marketplaces(name)")
     .eq("id", accountId)
     .maybeSingle();
   if (!data) notFound();
-  if (v.kind === "seller" && data.client_id !== v.clientId) notFound();
+  if (v.kind === "seller" && (data.client_id !== v.clientId || !data.active)) notFound(); // hidden marketplaces are off the seller's dashboard
   const one = <T,>(x: T | T[] | null) => (Array.isArray(x) ? x[0] : x);
   return {
     id: data.id, client_id: data.client_id, name: data.name, seller_id: data.seller_id,

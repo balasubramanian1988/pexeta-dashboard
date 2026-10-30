@@ -42,7 +42,7 @@ export default function Sidebar({ name, team, accounts }: Props) {
         <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber">Seller dashboard</div>
       </div>
       <div className="flex-1 space-y-1 overflow-y-auto px-3">
-        {team && item("/accounts", "All accounts", Building2, path === "/accounts")}
+        {team && item("/accounts", "Brands", Building2, path === "/accounts")}
         {team && item("/team/sellers", "Seller logins", Users, path.startsWith("/team/sellers"))}
         {account && (
           <>
