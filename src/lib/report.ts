@@ -4,6 +4,7 @@ import { brandTotals, findings, type Finding, type MarketSummary } from "@/lib/e
 import { eachDay } from "@/lib/engine/summaries";
 import { dateLabel } from "@/lib/format";
 import type { SearchResult } from "@/lib/engine/search";
+import { THEME_LABEL, type ReturnsResult } from "@/lib/engine/returns";
 
 const NAVY = "FF0B2A4A", ORANGE = "FFF2871E", ICE = "FFEEF4FA", RED_FILL = "FFFDECEC", GREEN = "FF1F7A4D", RED = "FFB42318", GREY = "FF64748B";
 const FONT = "Arial";
@@ -49,9 +50,10 @@ export type BrandReportInput = {
   clientName: string; period: { from: string; to: string }; prevFrom: string; prevTo: string;
   markets: MarketSummary[]; extra: Finding[]; today?: string;
   search?: SearchResult | null;      // Amazon Brand Analytics: actions and progress, when uploaded
+  returns?: ReturnsResult | null;    // why customers returned products, all marketplaces
 };
 
-export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, markets, extra, today, search }: BrandReportInput): ExcelJS.Workbook {
+export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, markets, extra, today, search, returns }: BrandReportInput): ExcelJS.Workbook {
   const live = markets.filter((m) => m.hasData);
   const t = brandTotals(markets);
   const found = findings(markets, extra);
@@ -256,6 +258,34 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
     }
     setup(a, false);
     sheets.splice(1, 0, a);
+  }
+
+  // ---------- Returns ----------
+  if (returns && returns.total) {
+    const rt = wb.addWorksheet("Returns", { views: [{ showGridLines: false }] });
+    rt.columns = [{ width: 44 }, { width: 14 }, { width: 14 }, { width: 60 }];
+    title(rt, `${clientName}: why products came back`, `${periodText}. Every returned or undelivered unit, by theme.`, 4);
+    let rr = 4;
+    header(rt, rr, ["Theme", "Units", "Share", ""]); rr++;
+    const first = rr;
+    for (const t of returns.byTheme) { rt.getRow(rr).values = [THEME_LABEL[t.theme], t.units, f(`IF(SUM($B$${first}:$B$${first + returns.byTheme.length - 1})=0,0,B${rr}/SUM($B$${first}:$B$${first + returns.byTheme.length - 1}))`, t.share)]; rt.getCell(rr, 3).numFmt = PCT; rr++; }
+    rr++;
+    rt.mergeCells(rr, 1, rr, 4); rt.getCell(rr, 1).value = "What to do about returns"; rt.getCell(rr, 1).font = { bold: true, size: 12, color: { argb: NAVY } }; rr++;
+    returns.actions.forEach((x, i) => {
+      rt.mergeCells(rr, 1, rr, 4); rt.getCell(rr, 1).value = `${i + 1}. ${x.title} (${x.owner})`; rt.getCell(rr, 1).font = { bold: true }; rr++;
+      rt.mergeCells(rr, 1, rr, 4); rt.getCell(rr, 1).value = x.why; rt.getCell(rr, 1).font = { color: { argb: GREY }, size: 9 }; rt.getCell(rr, 1).alignment = { wrapText: true, vertical: "top" }; rt.getRow(rr).height = x.why.length > 120 ? 40 : 14; rr++;
+    });
+    rr++;
+    header(rt, rr, ["Product", "Marketplace", "Units", "Customers said"]); rr++;
+    for (const p of returns.products.slice(0, 25)) {
+      rt.getRow(rr).values = [p.name, p.marketplace, p.total, p.comments.slice(0, 2).map((c) => `“${c.slice(0, 120)}”`).join(" ")];
+      for (let c = 1; c <= 4; c++) rt.getCell(rr, c).alignment = { wrapText: c === 1 || c === 4, vertical: "top", horizontal: c === 3 ? "right" : undefined };
+      const said = String(rt.getCell(rr, 4).value ?? "");
+      if (said.length > 70) rt.getRow(rr).height = 13 * Math.min(4, Math.ceil(said.length / 70));
+      rr++;
+    }
+    setup(rt, false);
+    sheets.push(rt);
   }
 
   for (const ws of sheets) {

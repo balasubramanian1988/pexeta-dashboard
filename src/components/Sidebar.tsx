@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { BadgeIndianRupee, BarChart3, Boxes, Building2, FileText, Gauge, LayoutGrid, Megaphone, Menu, Search, Store, Tags, Upload, Users, Wallet, X, LogOut, KeyRound } from "lucide-react";
+import { BadgeIndianRupee, BarChart3, Boxes, Building2, FileText, Gauge, LayoutGrid, Megaphone, Menu, Search, Store, Undo2, Tags, Upload, Users, Wallet, X, LogOut, KeyRound } from "lucide-react";
 import Logo from "./Logo";
 
 type Props = { name: string; team: boolean; accounts: { id: string; name: string; marketplace: string; client_id: string; client_name: string }[] };
@@ -62,6 +62,7 @@ export default function Sidebar({ name, team, accounts }: Props) {
           <>
             <div className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{brandAccounts[0].client_name}</div>
             {item(`/b/${brandId}${range}`, "All marketplaces", LayoutGrid, path === `/b/${brandId}`)}
+            {item(`/b/${brandId}/returns${range}`, "Returns insights", Undo2, path === `/b/${brandId}/returns`)}
             {brandAccounts.map((a) => (
               <div key={a.id}>
                 {item(`/a/${a.id}${range}`, a.marketplace || a.name, Store, a.id === account?.id && path === `/a/${a.id}`)}

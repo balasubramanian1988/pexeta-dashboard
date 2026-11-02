@@ -3,11 +3,12 @@ import Link from "next/link";
 import PeriodPicker from "@/components/PeriodPicker";
 import { Empty, Kpi, KpiRupees, PageHeader, PeriodNote, Section } from "@/components/ui";
 import { getBrandAccounts, getViewer } from "@/lib/auth";
-import { getBrand, getSearch } from "@/lib/data";
+import { getBrand, getReturns, getSearch } from "@/lib/data";
 import { brandTotals, findings, type MarketSummary } from "@/lib/engine/brand";
 import { eachDay } from "@/lib/engine/summaries";
 import { compactRupees, count, dateLabel, percent } from "@/lib/format";
 import { getBrandPeriod } from "@/lib/period";
+import { THEME_LABEL } from "@/lib/engine/returns";
 
 export const metadata = { title: "All marketplaces" };
 
@@ -71,7 +72,7 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
   const [viewer, { clientName, accounts }] = await Promise.all([getViewer(), getBrandAccounts(clientId)]);
   const period = await getBrandPeriod(accounts.map((a) => a.id), await searchParams);
   const amazon = accounts.find((a) => a.marketplace === "Amazon");
-  const [{ markets, extra, prevFrom, prevTo }, search] = await Promise.all([getBrand(accounts, period.from, period.to, period.days), amazon ? getSearch(amazon) : Promise.resolve(null)]);
+  const [{ markets, extra, prevFrom, prevTo }, search, returns] = await Promise.all([getBrand(accounts, period.from, period.to, period.days), amazon ? getSearch(amazon) : Promise.resolve(null), getReturns(accounts, period.from, period.to)]);
   const live = markets.filter((m) => m.hasData);
   const t = brandTotals(markets);
   const found = findings(markets, extra);
@@ -182,6 +183,15 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
                     })}</ul>
                   </div>
                 )}
+              </div>
+            </Section>
+          )}
+
+          {returns.total > 0 && (
+            <Section title={`Returns: ${count(returns.total)} units came back`} sub="Refused or undelivered orders included." action={<Link href={`/b/${clientId}/returns${q}`} className="text-xs font-semibold text-brand hover:underline">Returns insights</Link>}>
+              <div className="grid gap-6 px-4 py-4 lg:grid-cols-2">
+                <ul className="space-y-1 text-sm">{returns.byTheme.slice(0, 4).map((t) => <li key={t.theme} className="flex justify-between gap-3"><span className="text-muted">{THEME_LABEL[t.theme]}</span><span className="tabular font-semibold">{count(t.units)} · {percent(t.share, 0)}</span></li>)}</ul>
+                <ol className="list-decimal space-y-1.5 pl-5 text-sm">{returns.actions.slice(0, 3).map((a) => <li key={a.title}><b>{a.title}</b> <span className="text-xs text-muted">({a.owner})</span></li>)}</ol>
               </div>
             </Section>
           )}

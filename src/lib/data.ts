@@ -12,6 +12,7 @@ import { dailyNetSales } from "./engine/summaries";
 import { computeFcStock, computeFirstCry, fcAdsInPeriod, type FcAdRow, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
 import { addDays, earliestDataDate } from "./period";
 import { computeSearch, type AsinRow, type BasketRow, type QueryRow } from "./engine/search";
+import { computeReturns, type ReturnLine } from "./engine/returns";
 
 type Sb = Awaited<ReturnType<typeof createClient>>;
 type Res<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
@@ -296,4 +297,35 @@ export const getSearch = cache(async (account: Account) => {
   const names = new Map(products.map((p) => [p.asin, p.short_name || p.title]));
   const result = computeSearch({ queries, asins, basket, brandName: account.client_name, names });
   return { result, hasData: asins.length > 0 || queries.length > 0, hasQueries: queries.length > 0, hasAsins: asins.length > 0, hasBasket: basket.length > 0 };
+});
+
+// ---------- Returns insights (all marketplaces of a brand) ----------
+/** Every return and undelivered unit in the period, with the marketplace's reason and the customer's words. */
+export const getReturns = cache(async (accounts: Account[], from: string, to: string) => {
+  const sb = await createClient();
+  const lines: ReturnLine[] = [];
+  await Promise.all(accounts.map(async (a) => {
+    const [products, skus] = await Promise.all([
+      fetchAll<{ asin: string; title: string; short_name: string }>((f, t) => sb.from("sd_products").select("asin, title, short_name").eq("account_id", a.id).range(f, t)),
+      fetchAll<{ sku: string; asin: string }>((f, t) => sb.from("sd_skus").select("sku, asin").eq("account_id", a.id).range(f, t)),
+    ]);
+    const nameMap = new Map(products.map((p) => [p.asin, p.short_name || p.title]));
+    const asinOfSku = new Map(skus.map((x) => [x.sku, x.asin]));
+    const name = (id: string) => nameMap.get(id) || nameMap.get(asinOfSku.get(id) ?? "") || id;
+    if (a.marketplace === "Amazon") {
+      const rows = await fetchAll<{ return_date: string; asin: string; sku: string; quantity: number; reason: string; disposition: string; comments: string }>((f, t) => sb.from("sd_returns").select("return_date, asin, sku, quantity, reason, disposition, comments").eq("account_id", a.id).gte("return_date", from).lte("return_date", to).order("row_key").range(f, t));
+      for (const r of rows) { const id = r.asin || asinOfSku.get(r.sku) || r.sku; lines.push({ marketplace: "Amazon", date: r.return_date, product: id, name: name(id), quantity: Number(r.quantity) || 1, reason: r.reason, detail: r.disposition, comment: r.comments ?? "" }); }
+    } else if (a.marketplace === "FirstCry") {
+      const [ret, rto] = await Promise.all([
+        fetchAll<{ return_date: string; product_id: string; quantity: number; reason: string; sub_reason: string }>((f, t) => sb.from("sd_fc_returns").select("return_date, product_id, quantity, reason, sub_reason").eq("account_id", a.id).gte("return_date", from).lte("return_date", to).order("row_key").range(f, t)),
+        fetchAll<{ return_date: string; product_id: string; rto_qty: number }>((f, t) => sb.from("sd_fc_recon").select("return_date, product_id, rto_qty").eq("account_id", a.id).gt("rto_qty", 0).gte("return_date", from).lte("return_date", to).order("row_key").range(f, t)),
+      ]);
+      for (const r of ret) lines.push({ marketplace: "FirstCry", date: r.return_date, product: r.product_id, name: name(r.product_id), quantity: Number(r.quantity) || 1, reason: r.reason, detail: r.sub_reason, comment: "" });
+      for (const r of rto) lines.push({ marketplace: "FirstCry", date: r.return_date, product: r.product_id, name: name(r.product_id), quantity: Number(r.rto_qty), reason: "RTO", detail: "Returned to origin", comment: "" });
+    } else if (a.marketplace === "Myntra") {
+      const rows = await fetchAll<{ status: string; sku: string; quantity: number; return_reason: string; return_created_date: string | null; rto_date: string | null }>((f, t) => sb.from("sd_my_returns").select("status, sku, quantity, return_reason, return_created_date, rto_date").eq("account_id", a.id).or(`and(return_created_date.gte.${from},return_created_date.lte.${to}),and(rto_date.gte.${from},rto_date.lte.${to})`).order("row_key").range(f, t));
+      for (const r of rows) lines.push({ marketplace: "Myntra", date: (r.rto_date || r.return_created_date)!, product: r.sku, name: name(r.sku), quantity: Number(r.quantity) || 1, reason: r.status === "RTO" ? "RTO" : r.return_reason, detail: r.status, comment: "" });
+    }
+  }));
+  return computeReturns(lines);
 });
