@@ -10,7 +10,7 @@ export type ReadFile =
   | { kind: "pdf"; fileName: string; text: string; data: Uint8Array };
 
 const KNOWN_HEADER_STARTS = ["date/time", "amazon-order-id", "item-name", "sku", "(parent) asin", "date", "return-date",
-  "seller gstin", "gstin of receiver", "invoice number"];
+  "seller gstin", "gstin of receiver", "invoice number", "search query", "asin title", "product title"];
 
 /** Some Amazon CSVs start with explanation lines; find the real header row. */
 function findHeaderLine(lines: string[]): number {

@@ -1,6 +1,7 @@
 // Maps each recognised report into rows for its sd_ table. Pure functions: no database access.
 import type { ReportType } from "./detect";
 import type { Table } from "./read";
+import { baAsins, baBasket, baQueries } from "./brandAnalytics";
 import { fcAds, fcProducts, fcRecon, fcReturns, fcSales } from "./firstcry";
 import { myAdsStyles, myDeductions, myOrders, myReturns, mySettlement, myStyles } from "./myntra";
 import {
@@ -431,6 +432,9 @@ export function taxDocument(text: string, fileName: string): Parsed {
 
 export function mapTable(type: ReportType, t: Table, ctx: Ctx): Parsed {
   switch (type) {
+    case "ba_sqp": return baQueries(t, ctx.fileName);
+    case "ba_scp": return baAsins(t, ctx.fileName);
+    case "ba_basket": return baBasket(t, ctx.fileName);
     case "orders": return orders(t);
     case "listings": return listings(t, ctx);
     case "fba_inventory": return fbaInventory(t, ctx);

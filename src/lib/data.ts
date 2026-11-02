@@ -11,6 +11,7 @@ import type { Finding, MarketSummary } from "./engine/brand";
 import { dailyNetSales } from "./engine/summaries";
 import { computeFcStock, computeFirstCry, fcAdsInPeriod, type FcAdRow, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
 import { addDays, earliestDataDate } from "./period";
+import { computeSearch, type AsinRow, type BasketRow, type QueryRow } from "./engine/search";
 
 type Sb = Awaited<ReturnType<typeof createClient>>;
 type Res<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
@@ -269,4 +270,30 @@ export const getMyStock = cache(async (account: Account, from: string, to: strin
   const units = new Map<string, number>();
   for (const o of orders) if (!(o.status === "F" && !o.shipped_on && !o.delivered_on) && o.sku) units.set(o.sku, (units.get(o.sku) ?? 0) + 1);
   return computeFcStock({ unitsById: units, periodDays: days, products: master.products, settings: master.settings, defaults: defaultsOf(account) });
+});
+
+// ---------- Amazon Brand Analytics: Search & listings ----------
+const BA_Q_COLS = "period_end, query, volume, impr_total, impr_brand, click_total, click_brand, cart_total, cart_brand, purch_total, purch_brand, price_median, brand_price_median";
+const BA_Q_NUM = ["volume", "impr_total", "impr_brand", "click_total", "click_brand", "cart_total", "cart_brand", "purch_total", "purch_brand"];
+const BA_A_NUM = ["impressions", "impr_fast", "clicks", "cart_adds", "purchases", "purch_fast", "sales"];
+
+/** Weekly Brand Analytics for one Amazon account. Search terms are read for the first four weeks on record (the
+ *  baseline for "what has improved") and the latest twelve (trends and findings); product rows for every week. */
+export const getSearch = cache(async (account: Account) => {
+  const sb = await createClient();
+  const asins = await fetchAll<AsinRow>((f, t) => sb.from("sd_ba_asins").select("period_end, asin, impressions, impr_fast, clicks, cart_adds, purchases, purch_fast, sales, price_median").eq("account_id", account.id).eq("grain", "week").order("period_end").order("asin").range(f, t))
+    .then((r) => numify(r, BA_A_NUM).map((x) => ({ ...x, price_median: x.price_median == null ? null : Number(x.price_median) })));
+  const { data: qEnds } = await sb.from("sd_ba_queries").select("period_end").eq("account_id", account.id).eq("grain", "week").order("period_end").limit(5000);
+  const ends = [...new Set([...asins.map((a) => a.period_end), ...(qEnds ?? []).map((q) => q.period_end as string)])].sort();
+  const want = [...new Set([...ends.slice(0, 4), ...ends.slice(-12)])];
+  const [queries, basket, products] = await Promise.all([
+    want.length ? fetchAll<QueryRow>((f, t) => sb.from("sd_ba_queries").select(BA_Q_COLS).eq("account_id", account.id).eq("grain", "week").in("period_end", want).order("period_end").order("query").range(f, t))
+      .then((r) => numify(r, BA_Q_NUM)) : Promise.resolve([] as QueryRow[]),
+    fetchAll<BasketRow>((f, t) => sb.from("sd_ba_basket").select("*").eq("account_id", account.id).eq("grain", "month").order("period_end", { ascending: false }).range(f, t))
+      .then((r) => numify(r, ["orders", "with_pct_1", "with_pct_2", "with_pct_3"])),
+    fetchAll<{ asin: string; title: string; short_name: string }>((f, t) => sb.from("sd_products").select("asin, title, short_name").eq("account_id", account.id).range(f, t)),
+  ]);
+  const names = new Map(products.map((p) => [p.asin, p.short_name || p.title]));
+  const result = computeSearch({ queries, asins, basket, brandName: account.client_name, names });
+  return { result, hasData: asins.length > 0 || queries.length > 0, hasQueries: queries.length > 0, hasAsins: asins.length > 0, hasBasket: basket.length > 0 };
 });

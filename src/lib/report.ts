@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { brandTotals, findings, type Finding, type MarketSummary } from "@/lib/engine/brand";
 import { eachDay } from "@/lib/engine/summaries";
 import { dateLabel } from "@/lib/format";
+import type { SearchResult } from "@/lib/engine/search";
 
 const NAVY = "FF0B2A4A", ORANGE = "FFF2871E", ICE = "FFEEF4FA", RED_FILL = "FFFDECEC", GREEN = "FF1F7A4D", RED = "FFB42318", GREY = "FF64748B";
 const FONT = "Arial";
@@ -47,9 +48,10 @@ function setup(ws: ExcelJS.Worksheet, landscape = true) {
 export type BrandReportInput = {
   clientName: string; period: { from: string; to: string }; prevFrom: string; prevTo: string;
   markets: MarketSummary[]; extra: Finding[]; today?: string;
+  search?: SearchResult | null;      // Amazon Brand Analytics: actions and progress, when uploaded
 };
 
-export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, markets, extra, today }: BrandReportInput): ExcelJS.Workbook {
+export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, markets, extra, today, search }: BrandReportInput): ExcelJS.Workbook {
   const live = markets.filter((m) => m.hasData);
   const t = brandTotals(markets);
   const found = findings(markets, extra);
@@ -219,7 +221,44 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
   }
   setup(d, false);
 
-  for (const ws of [s, m, p, d]) {
+  // ---------- Amazon search (Brand Analytics) ----------
+  const sheets = [s, m, p, d];
+  if (search && (search.actions.length || search.progress)) {
+    const a = wb.addWorksheet("Amazon search", { views: [{ showGridLines: false }] });
+    a.columns = [{ width: 52 }, { width: 16 }, { width: 16 }, { width: 14 }];
+    title(a, `${clientName}: Amazon search`, "From Amazon Brand Analytics weekly reports. Search sales include GST.", 4);
+    let ar = 4;
+    a.mergeCells(ar, 1, ar, 4); a.getCell(ar, 1).value = "This month's actions"; a.getCell(ar, 1).font = { bold: true, size: 12, color: { argb: NAVY } }; ar++;
+    search.actions.forEach((x, i) => {
+      a.mergeCells(ar, 1, ar, 4); a.getCell(ar, 1).value = `${i + 1}. ${x.title} (${x.owner})`; a.getCell(ar, 1).font = { bold: true }; a.getCell(ar, 1).alignment = { wrapText: true, vertical: "top" }; a.getRow(ar).height = x.title.length > 85 ? 28 : 15; ar++;
+      a.mergeCells(ar, 1, ar, 4); a.getCell(ar, 1).value = x.why; a.getCell(ar, 1).font = { color: { argb: GREY }, size: 9 }; a.getCell(ar, 1).alignment = { wrapText: true, vertical: "top" }; a.getRow(ar).height = x.why.length > 120 ? 26 : 14; ar++;
+    });
+    const pg = search.progress;
+    if (pg) {
+      ar++;
+      a.mergeCells(ar, 1, ar, 4); a.getCell(ar, 1).value = "What Pexeta has improved"; a.getCell(ar, 1).font = { bold: true, size: 12, color: { argb: NAVY } }; ar++;
+      a.mergeCells(ar, 1, ar, 4); a.getCell(ar, 1).value = `Average week in ${dateLabel(pg.baseline.from)} – ${dateLabel(pg.baseline.to)} against ${dateLabel(pg.current.from)} – ${dateLabel(pg.current.to)}.${pg.early ? " Early days: comparisons become reliable after about eight weeks." : ""}`; a.getCell(ar, 1).font = { color: { argb: GREY }, size: 9 }; a.getCell(ar, 1).alignment = { wrapText: true, vertical: "top" }; a.getRow(ar).height = 26; ar++;
+      header(a, ar, ["Measure", "Then", "Now", "Change"]); ar++;
+      for (const x of pg.metrics) {
+        const fmtN = x.unit === "rupees" ? RS : x.unit === "pct" ? "0.00%" : "#,##0";
+        a.getRow(ar).values = [x.label, x.before, x.after, x.unit === "pct" ? f(`(C${ar}-B${ar})*100`, (x.after - x.before) * 100) : f(`IF(B${ar}=0,0,C${ar}/B${ar}-1)`, x.before ? x.after / x.before - 1 : 0)];
+        a.getCell(ar, 2).numFmt = fmtN; a.getCell(ar, 3).numFmt = fmtN;
+        a.getCell(ar, 4).numFmt = x.unit === "pct" ? '+0.00" pts";[Red]-0.00" pts";"–"' : '+0%;[Red]-0%;"–"';
+        ar++;
+      }
+      const list = (heading: string, color: string, items: { label: string; detail: string }[]) => {
+        if (!items.length) return;
+        ar++; a.getCell(ar, 1).value = heading; a.getCell(ar, 1).font = { bold: true, color: { argb: color } }; ar++;
+        for (const w of items.slice(0, 6)) { a.mergeCells(ar, 1, ar, 4); a.getCell(ar, 1).value = `${w.label}: ${w.detail}`; ar++; }
+      };
+      list("Gains", GREEN, pg.wins);
+      list("To watch", "FFB54708", pg.slips.slice(0, 3));
+    }
+    setup(a, false);
+    sheets.splice(1, 0, a);
+  }
+
+  for (const ws of sheets) {
     ws.getCell(2, 1).border = { bottom: { style: "medium", color: { argb: ORANGE } } };
     fontAll(ws);
   }

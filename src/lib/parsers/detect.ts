@@ -15,6 +15,9 @@ export type ReportType =
   | "mtr_b2b"
   | "stock_transfer"
   | "tax_document"
+  | "ba_sqp"
+  | "ba_scp"
+  | "ba_basket"
   | "fc_sales"
   | "fc_recon"
   | "fc_returns"
@@ -43,6 +46,9 @@ export const REPORT_LABEL: Record<ReportType, string> = {
   mtr_b2b: "MTR B2B (GST)",
   stock_transfer: "MTR Stock Transfer (GST)",
   tax_document: "Amazon tax invoice / credit note",
+  ba_sqp: "Brand Analytics: Search Query Performance (brand view)",
+  ba_scp: "Brand Analytics: Search Catalogue Performance",
+  ba_basket: "Brand Analytics: Market Basket Analysis",
   fc_sales: "FirstCry: Sales report",
   fc_recon: "FirstCry: Vendor Reconciliation",
   fc_returns: "FirstCry: Sale Return data",
@@ -57,7 +63,7 @@ export const REPORT_LABEL: Record<ReportType, string> = {
   my_styles: "Myntra: Style dashboard (product list)",
 };
 
-export const AMAZON_REPORTS: ReportType[] = ["unified_transactions", "orders", "business_child", "fba_inventory", "listings", "sp_advertised", "sd_advertised", "sb_keyword", "sb_purchases", "returns", "mtr_b2c", "mtr_b2b", "stock_transfer", "tax_document"];
+export const AMAZON_REPORTS: ReportType[] = ["unified_transactions", "orders", "business_child", "fba_inventory", "listings", "sp_advertised", "sd_advertised", "sb_keyword", "sb_purchases", "returns", "mtr_b2c", "mtr_b2b", "stock_transfer", "tax_document", "ba_sqp", "ba_scp", "ba_basket"];
 export const FIRSTCRY_REPORTS: ReportType[] = ["fc_sales", "fc_recon", "fc_returns", "fc_products", "fc_ads"];
 export const MYNTRA_REPORTS: ReportType[] = ["my_orders", "my_settlement", "my_deductions", "my_returns", "my_invoice", "my_ads_styles", "my_styles"];
 
@@ -95,6 +101,13 @@ export function detectTable(headers: string[]): Detection {
   if (has("ad spend", "ad impressions", "ad mrp sales")) return { type: "fc_ads" };
   if (has("transaction id", "wallet name", "transaction type", "amount"))
     return { type: null, reason: "FirstCry Ads wallet log: it shows top-ups, not spend. Upload the Product Ads performance report instead." };
+
+  // Amazon Brand Analytics
+  if (has("search query", "search query volume", "impressions: brand count", "purchases: brand count")) return { type: "ba_sqp" };
+  if (has("search query", "search query volume", "impressions: asin count"))
+    return { type: null, reason: "Search Query Performance, ASIN view: upload the Brand view instead (one file covers all products)." };
+  if (has("asin title", "asin", "impressions: impressions", "purchases: search traffic sales")) return { type: "ba_scp" };
+  if (has("asin", "number of orders", "#1 purchase combination: asin")) return { type: "ba_basket" };
 
   if (has("date/time", "settlement id", "type", "order id")) return { type: "unified_transactions" };
   if (has("transaction type", "total product charges", "amazon fees"))

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { BadgeIndianRupee, BarChart3, Boxes, Building2, FileText, Gauge, LayoutGrid, Megaphone, Menu, Store, Tags, Upload, Users, Wallet, X, LogOut, KeyRound } from "lucide-react";
+import { BadgeIndianRupee, BarChart3, Boxes, Building2, FileText, Gauge, LayoutGrid, Megaphone, Menu, Search, Store, Tags, Upload, Users, Wallet, X, LogOut, KeyRound } from "lucide-react";
 import Logo from "./Logo";
 
 type Props = { name: string; team: boolean; accounts: { id: string; name: string; marketplace: string; client_id: string; client_name: string }[] };
@@ -23,6 +23,7 @@ const TABS = [
   { slug: "profit", label: "Profitability", icon: BadgeIndianRupee },
   { slug: "revenue", label: "Revenue", icon: BarChart3 },
   { slug: "ads", label: "Ads", icon: Megaphone },
+  { slug: "search", label: "Search & listings", icon: Search },
   { slug: "stock", label: "45-day stock plan", icon: Boxes },
   { slug: "gst", label: "GST & documents", icon: FileText },
   { slug: "costs", label: "Product costs", icon: Tags },
@@ -68,7 +69,7 @@ export default function Sidebar({ name, team, accounts }: Props) {
                   <div className="ml-5 space-y-0.5 border-l border-white/10 pl-2">
                     {(a.marketplace === "FirstCry" || a.marketplace === "Myntra" ? DROPSHIP_TABS : TABS).filter((t) => t.slug).map((t) => {
                       const href = `/a/${a.id}/${t.slug}`;
-                      return item(`${href}${t.slug === "costs" || t.slug === "gst" ? "" : range}`, t.label, t.icon, path.startsWith(href));
+                      return item(`${href}${t.slug === "costs" || t.slug === "gst" || t.slug === "search" ? "" : range}`, t.label, t.icon, path.startsWith(href));
                     })}
                     {team && item(`/a/${a.id}/uploads`, "Upload reports", Upload, path.startsWith(`/a/${a.id}/uploads`))}
                   </div>

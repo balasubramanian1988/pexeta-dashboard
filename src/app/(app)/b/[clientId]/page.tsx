@@ -3,7 +3,7 @@ import Link from "next/link";
 import PeriodPicker from "@/components/PeriodPicker";
 import { Empty, Kpi, KpiRupees, PageHeader, PeriodNote, Section } from "@/components/ui";
 import { getBrandAccounts, getViewer } from "@/lib/auth";
-import { getBrand } from "@/lib/data";
+import { getBrand, getSearch } from "@/lib/data";
 import { brandTotals, findings, type MarketSummary } from "@/lib/engine/brand";
 import { eachDay } from "@/lib/engine/summaries";
 import { compactRupees, count, dateLabel, percent } from "@/lib/format";
@@ -70,7 +70,8 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
   const { clientId } = await params;
   const [viewer, { clientName, accounts }] = await Promise.all([getViewer(), getBrandAccounts(clientId)]);
   const period = await getBrandPeriod(accounts.map((a) => a.id), await searchParams);
-  const { markets, extra, prevFrom, prevTo } = await getBrand(accounts, period.from, period.to, period.days);
+  const amazon = accounts.find((a) => a.marketplace === "Amazon");
+  const [{ markets, extra, prevFrom, prevTo }, search] = await Promise.all([getBrand(accounts, period.from, period.to, period.days), amazon ? getSearch(amazon) : Promise.resolve(null)]);
   const live = markets.filter((m) => m.hasData);
   const t = brandTotals(markets);
   const found = findings(markets, extra);
@@ -163,6 +164,27 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
               )}
             </section>
           </div>
+
+          {search?.hasData && amazon && (search.result.actions.length > 0 || search.result.progress) && (
+            <Section title="Amazon search: actions and progress" sub="From Amazon Brand Analytics, weekly." action={<Link href={`/a/${amazon.id}/search`} className="text-xs font-semibold text-brand hover:underline">Search & listings</Link>}>
+              <div className="grid gap-6 px-4 py-4 lg:grid-cols-2">
+                <div>
+                  <h3 className="text-sm font-bold text-navy">This month&apos;s actions</h3>
+                  <ol className="mt-1 list-decimal space-y-1.5 pl-5 text-sm">{search.result.actions.slice(0, 3).map((a) => <li key={a.title}><b>{a.title}</b> <span className="text-xs text-muted">({a.owner})</span></li>)}</ol>
+                </div>
+                {search.result.progress && (
+                  <div>
+                    <h3 className="text-sm font-bold text-navy">What Pexeta has improved <span className="text-xs font-normal text-muted">({dateLabel(search.result.progress.baseline.from)} → {dateLabel(search.result.progress.current.to)})</span></h3>
+                    <ul className="mt-1 space-y-1 text-sm">{search.result.progress.metrics.filter((m) => m.unit !== "rupees").slice(0, 4).map((m) => {
+                      const up = m.after > m.before, good = m.after === m.before ? null : up === m.higherIsBetter;
+                      const v = (x: number) => (m.unit === "pct" ? percent(x, x < 0.01 ? 2 : 1) : count(Math.round(x)));
+                      return <li key={m.label} className="flex justify-between gap-3"><span className="text-muted">{m.label}</span><span className={`tabular font-semibold ${good == null ? "" : good ? "text-emerald-700" : "text-red-700"}`}>{v(m.before)} → {v(m.after)}</span></li>;
+                    })}</ul>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
 
           <Section title="Net sales by day" sub="Stacked by marketplace, excluding GST.">
             <StackedDaily rows={live} from={period.from} to={period.to} />
