@@ -9,7 +9,7 @@ import type { Account } from "./auth";
 import { computeMyntra, type MyAdStyleRow, type MyDeductionRow, type MyInvoiceRow, type MyOrderRow, type MyRateRow, type MyReturnRow, type MySettlementRow } from "./engine/myntra";
 import type { Finding, MarketSummary } from "./engine/brand";
 import { dailyNetSales } from "./engine/summaries";
-import { computeFcStock, computeFirstCry, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
+import { computeFcStock, computeFirstCry, fcAdsInPeriod, type FcAdRow, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
 import { addDays, earliestDataDate } from "./period";
 
 type Sb = Awaited<ReturnType<typeof createClient>>;
@@ -128,7 +128,10 @@ export const getFirstCry = cache(async (account: Account, from: string, to: stri
     getFcMaster(account.id),
   ]);
   const result = computeFirstCry({ sales, recon, rates, products: master.products, settings: master.settings, defaults: defaultsOf(account) });
-  return { result, returns, master, hasSales: sales.length > 0, hasRecon: recon.length > 0 };
+  // Ads: a monthly row covers its whole month, so read from the first of the month the period starts in.
+  const adRows = await fetchAll<FcAdRow>((f, t) => sb.from("sd_fc_ads").select("grain, period_date, product_id, spend, impressions, clicks, ad_sales, orders").eq("account_id", account.id).gte("period_date", `${from.slice(0, 7)}-01`).lte("period_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["spend", "impressions", "clicks", "ad_sales", "orders"]));
+  const ads = adRows.length ? fcAdsInPeriod(adRows, from, to) : null;
+  return { result, returns, master, ads, hasSales: sales.length > 0, hasRecon: recon.length > 0 };
 });
 
 export const getFcStock = cache(async (account: Account, from: string, to: string, days: number) => {
@@ -168,18 +171,29 @@ async function summarise(account: Account, from: string, to: string, prevFrom: s
     const [cur, prev] = await Promise.all([getFirstCry(account, from, to), getFirstCry(account, prevFrom, prevTo)]);
     if (!cur.hasSales && !cur.hasRecon) return { s: empty, extra: [] };
     const t = cur.result.totals;
+    const ads = cur.ads?.spend ?? null;
+    const profit = t.profit - (ads ?? 0);
     const extra: Finding[] = [];
     if (t.shortfall > 0) extra.push({ tone: "bad", title: `FirstCry paid about ₹${Math.round(t.shortfall).toLocaleString("en-IN")} less than its usual rate`, detail: `On ${cur.result.rows.filter((r) => r.shortfall > 0).length} product(s) whose GST rate changed but base cost did not. See FirstCry › Payments.` });
     return {
       s: {
         ...empty, hasData: true, sales: t.salesExGst, units: t.units - t.rtoUnits - t.returnUnits,
         returnRate: t.shippedUnits ? (t.rtoUnits + t.returnUnits) / t.shippedUnits : null,
-        fees: t.salesExGst - t.revenue, ads: null, productCost: t.productCost, profit: t.profit, margin: t.margin,
+        fees: t.salesExGst - t.revenue, ads, productCost: t.productCost, profit, margin: t.salesExGst ? profit / t.salesExGst : 0,
         prevSales: prev.hasSales || prev.hasRecon ? prev.result.totals.salesExGst : null,
         daily: new Map(cur.result.daily.map((d) => [d.date, d.sales])),
         lossProducts: cur.result.rows.filter((r) => r.profit < 0).length,
-        products: cur.result.rows.map((r) => ({ code: r.styleCode || r.id, name: r.name, units: r.keptUnits, sales: r.salesExGst, fees: r.salesExGst - r.revenue, ads: null, productCost: r.productCost, profit: r.profit, margin: r.margin })),
-        notes: ["Sales at MRP excl. GST: FirstCry's files show no customer price.", ...(t.revenueEstimated ? ["Includes orders not yet invoiced, estimated."] : [])],
+        products: cur.result.rows.map((r) => {
+          const a = cur.ads?.byProduct.size ? cur.ads.byProduct.get(r.id) ?? 0 : null;
+          const p = r.profit - (a ?? 0);
+          return { code: r.styleCode || r.id, name: r.name, units: r.keptUnits, sales: r.salesExGst, fees: r.salesExGst - r.revenue, ads: a, productCost: r.productCost, profit: p, margin: r.salesExGst ? p / r.salesExGst : 0 };
+        }),
+        notes: [
+          "Sales at MRP excl. GST: FirstCry's files show no customer price.",
+          ...(t.revenueEstimated ? ["Includes orders not yet invoiced, estimated."] : []),
+          ...(cur.ads?.spread ? ["Ads from FirstCry's monthly ads report, spread evenly over the month's days."] : []),
+          ...(cur.ads && !cur.ads.byProduct.size ? ["Ads are not split by product: the ads report has no product column."] : []),
+        ],
       },
       extra,
     };

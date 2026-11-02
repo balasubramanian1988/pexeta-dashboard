@@ -33,6 +33,7 @@ const FIRSTCRY_CHECKLIST: { type: ReportType; when: string; where: string }[] = 
   { type: "fc_recon", when: "Weekly", where: "Vendor Reconciliation, order dates covering the last 45 days. Gives what FirstCry pays (base cost), deliveries, payment advices and RTO / return debits. Re-downloading older weeks updates their status." },
   { type: "fc_returns", when: "Weekly", where: "Sale Return data, last 30 days. Gives customer return reasons." },
   { type: "fc_products", when: "Monthly, and whenever products, MRP or GST change", where: "All Product data. Gives product names, style codes, MRP and GST rates." },
+  { type: "fc_ads", when: "Weekly", where: "FirstCry Ads › Campaigns › Product Ads performance, day-wise (or the monthly summary until day-wise is available). Gives ad spend and ad sales. A monthly total is spread evenly over the month's days." },
 ];
 
 // Myntra Partner Portal downloads (Oct 2026). Overlapping dates are fine: rows are keyed by order line.

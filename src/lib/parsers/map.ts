@@ -1,7 +1,7 @@
 // Maps each recognised report into rows for its sd_ table. Pure functions: no database access.
 import type { ReportType } from "./detect";
 import type { Table } from "./read";
-import { fcProducts, fcRecon, fcReturns, fcSales } from "./firstcry";
+import { fcAds, fcProducts, fcRecon, fcReturns, fcSales } from "./firstcry";
 import { myAdsStyles, myDeductions, myOrders, myReturns, mySettlement, myStyles } from "./myntra";
 import {
   calendarDate, istDate, istMonth, num, parseTimestamp, parseUnifiedDate, parseUsDate, pct, rowHasher, shortName, str, type Row,
@@ -449,6 +449,7 @@ export function mapTable(type: ReportType, t: Table, ctx: Ctx): Parsed {
     case "fc_recon": return fcRecon(t);
     case "fc_returns": return fcReturns(t);
     case "fc_products": return fcProducts(t);
+    case "fc_ads": return fcAds(t);
     case "my_orders": return myOrders(t);
     case "my_settlement": return mySettlement(t);
     case "my_deductions": return myDeductions(t);

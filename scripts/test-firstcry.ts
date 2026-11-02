@@ -3,7 +3,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseUpload, type ParseResult } from "../src/lib/parsers";
-import { computeFirstCry, type FcReconRow, type FcSaleRow } from "../src/lib/engine/firstcry";
+import { computeFirstCry, fcAdsInPeriod, type FcAdRow, type FcReconRow, type FcSaleRow } from "../src/lib/engine/firstcry";
 
 const DIR = join(process.cwd(), "test-data", "firstcry");
 type Ok = Extract<ParseResult, { ok: true }>;
@@ -78,6 +78,19 @@ async function main() {
   expect("Engine: typical payout rate", res2.typicalRate ?? 0, 0.6175, 0.00005);
   expect("Engine: payout shortfall (units kept)", t.shortfall, 26635.86, 1);
   console.log(`      shortfall ₹${t.shortfall.toFixed(0)} on ${res2.rows.filter((r) => r.shortfall > 0).length} products; profit ₹${t.profit.toFixed(0)} (${(t.margin * 100).toFixed(1)}%)`);
+
+  // FirstCry Ads: October monthly summary (Product Ads performance), spread over the month's days.
+  const ads = of("fc_ads")[0];
+  if (!ads) { failures++; console.log("FAIL  no FirstCry Ads report in test-data/firstcry"); }
+  else {
+    const rows = ads.rows as unknown as FcAdRow[];
+    expect("Ads: rows", rows.length, 1, 0);
+    expect("Ads: October spend", fcAdsInPeriod(rows, "2026-10-01", "2026-10-31").spend, 85930.48, 0.01);
+    expect("Ads: 1–15 October (15/31 of the month)", fcAdsInPeriod(rows, "2026-10-01", "2026-10-15").spend, 85930.48 * 15 / 31, 0.01);
+    expect("Ads: ROAS", fcAdsInPeriod(rows, "2026-10-01", "2026-10-31").roas ?? 0, 269113 / 85930.48, 0.0001);
+    const withDay = [...rows, { grain: "day", period_date: "2026-10-03", product_id: "P1", spend: 100, impressions: 0, clicks: 0, ad_sales: 300, orders: 1 }];
+    expect("Ads: day-wise rows replace the monthly total", fcAdsInPeriod(withDay, "2026-10-01", "2026-10-31").spend, 100, 0);
+  }
 
   console.log(failures ? `\n${failures} check(s) failed` : "\nAll FirstCry parser checks passed");
   process.exit(failures ? 1 : 0);

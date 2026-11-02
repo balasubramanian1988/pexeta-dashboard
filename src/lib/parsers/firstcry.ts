@@ -127,3 +127,41 @@ export function fcProducts(t: Table): Parsed {
 }
 
 export { shortName };
+
+/** FirstCry Ads (Campaigns › Product Ads performance). One row per month in the summary download, or per day
+ *  in the day-wise one; a product or campaign column, when present, splits spend further. */
+export function fcAds(t: Table): Parsed {
+  const p = base("fc_ads", "sd_fc_ads");
+  const has = (c: string) => t.headers.some((h) => h.trim().toLowerCase() === c);
+  const col = (...names: string[]) => t.headers.find((h) => names.includes(h.trim().toLowerCase()));
+  const dayCol = col("date", "day");
+  const monthCol = col("month");
+  const grain = dayCol ? "day" : "month";
+  const dateCol = dayCol ?? monthCol;
+  const productCol = col("product id", "productid", "product_id", "sku id", "sku");
+  const campaignCol = col("campaign name", "campaign", "campaign id");
+  if (!dateCol) { p.warnings.push("No Date or Month column in this ads report."); return p; }
+  if (!has("ad spend")) { p.warnings.push("No Ad Spend column in this ads report."); return p; }
+  const key = keyer();
+  for (const r of t.rows) {
+    let d = day(r[dateCol]);
+    if (!d) continue;
+    if (grain === "month") d = `${d.slice(0, 7)}-01`;
+    const product = productCol ? pid(r[productCol]) : "";
+    const campaign = campaignCol ? str(r[campaignCol]) : "";
+    p.rows.push({
+      row_key: key(`${grain}|${d}|${product}|${campaign}`),
+      grain, period_date: d, product_id: product, campaign,
+      spend: num(r["Ad Spend"]), impressions: num(r["Ad Impressions"]), clicks: num(r["Ad Clicks"]),
+      ad_sales: num(r["Ad MRP Sales"]), orders: num(r["Orders (SKU)"]),
+    });
+  }
+  const dates = p.rows.map((x) => x.period_date as string).sort();
+  p.periodStart = dates[0] ?? null;
+  if (dates.length) {
+    const last = dates[dates.length - 1];
+    if (grain === "month") { const [y, m] = last.split("-").map(Number); p.periodEnd = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); }
+    else p.periodEnd = last;
+  }
+  return p;
+}

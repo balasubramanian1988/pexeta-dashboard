@@ -6,8 +6,9 @@ import { REPORT_LABEL, FIRSTCRY_REPORTS } from "@/lib/parsers";
 import { FcHeader, FcNoData, HowItWorks, type FcPageProps } from "./common";
 
 export default async function FcOverview({ account, period, team }: FcPageProps) {
-  const [{ result, hasSales, hasRecon }, fresh] = await Promise.all([getFirstCry(account, period.from, period.to), getFreshness(account.id)]);
+  const [{ result, ads, hasSales, hasRecon }, fresh] = await Promise.all([getFirstCry(account, period.from, period.to), getFreshness(account.id)]);
   const t = result.totals;
+  const profitAfterAds = t.profit - (ads?.spend ?? 0);
   const base = `/a/${account.id}`;
   const q = `?from=${period.from}&to=${period.to}`;
   const top = [...result.rows].sort((a, b) => b.profit - a.profit).slice(0, 6);
@@ -20,9 +21,10 @@ export default async function FcOverview({ account, period, team }: FcPageProps)
       <FcHeader account={account} period={period} title="Overview" slug="" />
       {!hasSales && !hasRecon ? <FcNoData accountId={account.id} team={team} /> : (
         <>
-          <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
             <KpiRupees label="Revenue from FirstCry (excl. GST)" value={t.revenue} sub={t.revenueEstimated ? `incl. ${compactRupees(t.revenueEstimated)} estimated` : "all from FirstCry's files"} />
-            <KpiRupees label="Net profit" value={t.profit} signed sub={`${percent(t.margin)} of sales at MRP excl. GST`} />
+            <KpiRupees label={ads ? "Net profit after ads" : "Net profit (before ads)"} value={profitAfterAds} signed sub={`${percent(t.salesExGst ? profitAfterAds / t.salesExGst : 0)} of sales at MRP excl. GST`} />
+            <KpiRupees label="Ad spend" value={ads?.spend ?? 0} sub={ads ? `ROAS ${ads.roas != null ? ads.roas.toFixed(2) : "–"} on ad sales at MRP${ads.spread ? " · monthly total spread by day" : ""}` : "No FirstCry Ads report uploaded"} />
             <Kpi label="Units ordered" value={count(t.units)} sub={`${compactRupees(t.mrpValue)} at MRP`} />
             <Kpi label="Usual payout rate" value={result.typicalRate != null ? percent(result.typicalRate, 2) : "–"} sub="base cost ÷ MRP excl. GST" />
             <Kpi label="Not delivered (RTO)" value={percent(t.rtoRate)} sub={`${count(t.rtoUnits)} of ${count(t.shippedUnits)} units shipped`} tone={t.rtoRate > 0.08 ? "bad" : undefined} />

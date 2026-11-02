@@ -244,3 +244,40 @@ export function returnReasons(rows: FcReturnRow[]) {
   }
   return [...m.values()].sort((a, b) => b.units - a.units);
 }
+
+// ---------- Ads ----------
+
+export type FcAdRow = { grain: string; period_date: string; product_id: string; spend: number; impressions: number; clicks: number; ad_sales: number; orders: number };
+export type FcAds = {
+  spend: number; adSales: number; clicks: number; orders: number;
+  roas: number | null;                 // ad sales at MRP ÷ spend
+  spread: boolean;                     // true when some spend comes from a monthly total spread over its days
+  byProduct: Map<string, number>;      // spend by product, only when the report is split by product
+  daily: Map<string, number>;
+};
+
+const daysInMonth = (ym: string) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
+
+/** Ad spend in [from, to]. Day-wise rows count as they are; a month with only a monthly row has its total
+ *  spread evenly over its days, and the days inside the period are counted. */
+export function fcAdsInPeriod(rows: FcAdRow[], from: string, to: string): FcAds {
+  const out: FcAds = { spend: 0, adSales: 0, clicks: 0, orders: 0, roas: null, spread: false, byProduct: new Map(), daily: new Map() };
+  const dailyMonths = new Set(rows.filter((r) => r.grain === "day").map((r) => r.period_date.slice(0, 7)));
+  const add = (date: string, share: number, r: FcAdRow) => {
+    out.spend += r.spend * share; out.adSales += r.ad_sales * share; out.clicks += r.clicks * share; out.orders += r.orders * share;
+    out.daily.set(date, (out.daily.get(date) ?? 0) + r.spend * share);
+    if (r.product_id) out.byProduct.set(r.product_id, (out.byProduct.get(r.product_id) ?? 0) + r.spend * share);
+  };
+  for (const r of rows) {
+    if (r.grain === "day") { if (r.period_date >= from && r.period_date <= to) add(r.period_date, 1, r); continue; }
+    const ym = r.period_date.slice(0, 7);
+    if (dailyMonths.has(ym)) continue;
+    const n = daysInMonth(ym);
+    for (let d = 1; d <= n; d++) {
+      const date = `${ym}-${String(d).padStart(2, "0")}`;
+      if (date >= from && date <= to) { add(date, 1 / n, r); out.spread = true; }
+    }
+  }
+  out.roas = out.spend > 0 ? out.adSales / out.spend : null;
+  return out;
+}

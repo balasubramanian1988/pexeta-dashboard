@@ -19,6 +19,7 @@ export type ReportType =
   | "fc_recon"
   | "fc_returns"
   | "fc_products"
+  | "fc_ads"
   | "my_orders"
   | "my_settlement"
   | "my_deductions"
@@ -46,6 +47,7 @@ export const REPORT_LABEL: Record<ReportType, string> = {
   fc_recon: "FirstCry: Vendor Reconciliation",
   fc_returns: "FirstCry: Sale Return data",
   fc_products: "FirstCry: All Product data",
+  fc_ads: "FirstCry Ads: Product Ads performance",
   my_orders: "Myntra: Orders report",
   my_settlement: "Myntra: Settlement report",
   my_deductions: "Myntra: Settlement non-order deductions",
@@ -56,7 +58,7 @@ export const REPORT_LABEL: Record<ReportType, string> = {
 };
 
 export const AMAZON_REPORTS: ReportType[] = ["unified_transactions", "orders", "business_child", "fba_inventory", "listings", "sp_advertised", "sd_advertised", "sb_keyword", "sb_purchases", "returns", "mtr_b2c", "mtr_b2b", "stock_transfer", "tax_document"];
-export const FIRSTCRY_REPORTS: ReportType[] = ["fc_sales", "fc_recon", "fc_returns", "fc_products"];
+export const FIRSTCRY_REPORTS: ReportType[] = ["fc_sales", "fc_recon", "fc_returns", "fc_products", "fc_ads"];
 export const MYNTRA_REPORTS: ReportType[] = ["my_orders", "my_settlement", "my_deductions", "my_returns", "my_invoice", "my_ads_styles", "my_styles"];
 
 /** Which marketplace a report belongs to, so an Amazon file is never saved into a FirstCry account (or the other way round). */
@@ -90,6 +92,9 @@ export function detectTable(headers: string[]): Detection {
   if (has("sales return date", "poid", "reason", "subreason")) return { type: "fc_returns" };
   if (has("poid", "orderdate", "productid", "mrp sales")) return { type: "fc_sales" };
   if (has("productid", "vendorstylecode", "productname", "gst")) return { type: "fc_products" };
+  if (has("ad spend", "ad impressions", "ad mrp sales")) return { type: "fc_ads" };
+  if (has("transaction id", "wallet name", "transaction type", "amount"))
+    return { type: null, reason: "FirstCry Ads wallet log: it shows top-ups, not spend. Upload the Product Ads performance report instead." };
 
   if (has("date/time", "settlement id", "type", "order id")) return { type: "unified_transactions" };
   if (has("transaction type", "total product charges", "amazon fees"))

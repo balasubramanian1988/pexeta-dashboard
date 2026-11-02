@@ -18,6 +18,7 @@ const CONFLICT: Record<string, string> = {
   sd_fc_sales: "account_id,row_key",
   sd_fc_recon: "account_id,row_key",
   sd_fc_returns: "account_id,row_key",
+  sd_fc_ads: "account_id,row_key",
   sd_my_orders: "account_id,order_line_id",
   sd_my_settlement: "account_id,row_key",
   sd_my_deductions: "account_id,invoice_ref",
