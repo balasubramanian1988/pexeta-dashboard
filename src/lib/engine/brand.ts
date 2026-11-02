@@ -4,6 +4,12 @@
 //                  because FirstCry's files show no customer price)
 //   fees         = what the marketplace keeps (Amazon fees excl. GST; FirstCry: sales − base cost paid)
 //   margin       = profit ÷ sales
+/** One product on one marketplace, in the same terms as MarketSummary (sales excl. GST; fees = what the marketplace keeps). */
+export type BrandProduct = {
+  code: string; name: string; units: number;
+  sales: number; fees: number; ads: number | null; productCost: number; profit: number; margin: number;
+};
+
 export type MarketSummary = {
   accountId: string; marketplace: string; supported: boolean; hasData: boolean;
   sales: number; units: number; returnRate: number | null;
@@ -12,6 +18,7 @@ export type MarketSummary = {
   prevSales: number | null;                  // same-length period just before
   daily: Map<string, number>;                // sales by day
   lossProducts: number;
+  products: BrandProduct[];
   notes: string[];
 };
 

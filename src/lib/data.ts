@@ -145,7 +145,7 @@ const SUPPORTED = new Set(["Amazon", "FirstCry", "Myntra"]);
 
 async function summarise(account: Account, from: string, to: string, prevFrom: string, prevTo: string): Promise<{ s: MarketSummary; extra: Finding[] }> {
   const base = { accountId: account.id, marketplace: account.marketplace, notes: [] as string[], daily: new Map<string, number>() };
-  const empty: MarketSummary = { ...base, supported: SUPPORTED.has(account.marketplace), hasData: false, sales: 0, units: 0, returnRate: null, fees: 0, ads: null, productCost: 0, profit: 0, margin: 0, prevSales: null, lossProducts: 0 };
+  const empty: MarketSummary = { ...base, supported: SUPPORTED.has(account.marketplace), hasData: false, sales: 0, units: 0, returnRate: null, fees: 0, ads: null, productCost: 0, profit: 0, margin: 0, prevSales: null, lossProducts: 0, products: [] };
   if (account.marketplace === "Amazon") {
     const [{ result, txns }, prev] = await Promise.all([getProfit(account, from, to), getProfit(account, prevFrom, prevTo)]);
     if (!txns.length) return { s: empty, extra: [] };
@@ -159,6 +159,7 @@ async function summarise(account: Account, from: string, to: string, prevFrom: s
         prevSales: prev.txns.length ? prev.result.totals.netSales : null,
         daily: new Map(dailyNetSales(txns, from, to).map((d) => [d.date, d.value])),
         lossProducts: result.rows.filter((r) => r.profit < 0).length,
+        products: result.rows.map((r) => ({ code: r.asin, name: r.name, units: r.units, sales: r.netSales, fees: r.fees, ads: r.ads, productCost: r.productCost, profit: r.profit, margin: r.margin })),
       },
       extra: [],
     };
@@ -177,6 +178,7 @@ async function summarise(account: Account, from: string, to: string, prevFrom: s
         prevSales: prev.hasSales || prev.hasRecon ? prev.result.totals.salesExGst : null,
         daily: new Map(cur.result.daily.map((d) => [d.date, d.sales])),
         lossProducts: cur.result.rows.filter((r) => r.profit < 0).length,
+        products: cur.result.rows.map((r) => ({ code: r.styleCode || r.id, name: r.name, units: r.keptUnits, sales: r.salesExGst, fees: r.salesExGst - r.revenue, ads: null, productCost: r.productCost, profit: r.profit, margin: r.margin })),
         notes: ["Sales at MRP excl. GST: FirstCry's files show no customer price.", ...(t.revenueEstimated ? ["Includes orders not yet invoiced, estimated."] : [])],
       },
       extra,
@@ -195,6 +197,7 @@ async function summarise(account: Account, from: string, to: string, prevFrom: s
         prevSales: prev.hasData ? prev.result.totals.sales : null,
         daily: new Map(cur.result.daily.map((d) => [d.date, d.sales])),
         lossProducts: cur.result.rows.filter((r) => r.profit < 0).length,
+        products: cur.result.rows.map((r) => ({ code: r.sku, name: r.name, units: r.units - r.returnUnits, sales: r.sales, fees: r.myntraMargin + r.fees, ads: cur.result.ads.length ? r.ads : null, productCost: r.productCost, profit: r.profit, margin: r.margin })),
         notes: t.estimatedLines ? [`${t.estimatedLines} orders estimated: not in a settlement file yet.`] : [],
       },
       extra: [],

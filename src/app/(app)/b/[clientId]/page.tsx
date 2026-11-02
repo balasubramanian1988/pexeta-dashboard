@@ -83,7 +83,10 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
     <>
       <PageHeader eyebrow={`${clientName} · All marketplaces`} title="How the brand is doing"
         sub={<><PeriodNote from={period.from} to={period.to} />, compared with {dateLabel(prevFrom)} to {dateLabel(prevTo)}. Sales exclude GST. Amazon is by settlement date; FirstCry and Myntra by order date. Growth is shown only where uploads cover the whole previous period.</>}
-        action={<PeriodPicker period={period} basePath={`/b/${clientId}`} />} />
+        action={<div className="flex flex-wrap items-center gap-2">
+          <PeriodPicker period={period} basePath={`/b/${clientId}`} />
+          {live.length > 0 && <a href={`/api/b/${clientId}/report${q}`} download className="btn btn-outline whitespace-nowrap">Download Excel report</a>}
+        </div>} />
 
       {!live.length ? <div className="card"><Empty>No marketplace data for these dates yet.{viewer.kind === "team" ? " Upload reports from each marketplace account." : ""}</Empty></div> : (
         <>
