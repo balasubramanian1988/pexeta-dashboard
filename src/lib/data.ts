@@ -329,3 +329,21 @@ export const getReturns = cache(async (accounts: Account[], from: string, to: st
   }));
   return computeReturns(lines);
 });
+
+// ---------- Pexeta's work for a brand (client-visible Ops tasks) ----------
+export type WorkItem = { ref: number; title: string; marketplace: string; state: "completed" | "in_progress" | "waiting"; need: string; due_date: string; done_at: string | null; updated_at: string };
+/** Waiting on the seller and in progress: all open items. Completed: closed by the VP within the dates. */
+export const getClientWork = cache(async (clientId: string, from: string, to: string) => {
+  const sb = await createClient();
+  const { data, error } = await sb.rpc("sd_client_tasks", { p_client: clientId });
+  if (error) return { waiting: [] as WorkItem[], inProgress: [] as WorkItem[], completed: [] as WorkItem[], available: false };
+  const rows = (data ?? []) as WorkItem[];
+  const day = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
+  const byDue = (a: WorkItem, b: WorkItem) => a.due_date.localeCompare(b.due_date);
+  return {
+    waiting: rows.filter((r) => r.state === "waiting").sort(byDue),
+    inProgress: rows.filter((r) => r.state === "in_progress").sort(byDue),
+    completed: rows.filter((r) => r.state === "completed" && day(r.done_at) >= from && day(r.done_at) <= to).sort((a, b) => (b.done_at ?? "").localeCompare(a.done_at ?? "")),
+    available: true,
+  };
+});

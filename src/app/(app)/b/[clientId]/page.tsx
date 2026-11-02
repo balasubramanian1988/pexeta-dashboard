@@ -3,7 +3,7 @@ import Link from "next/link";
 import PeriodPicker from "@/components/PeriodPicker";
 import { Empty, Kpi, KpiRupees, PageHeader, PeriodNote, Section } from "@/components/ui";
 import { getBrandAccounts, getViewer } from "@/lib/auth";
-import { getBrand, getReturns, getSearch } from "@/lib/data";
+import { getBrand, getClientWork, getReturns, getSearch } from "@/lib/data";
 import { brandTotals, findings, type MarketSummary } from "@/lib/engine/brand";
 import { eachDay } from "@/lib/engine/summaries";
 import { compactRupees, count, dateLabel, percent } from "@/lib/format";
@@ -72,7 +72,7 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
   const [viewer, { clientName, accounts }] = await Promise.all([getViewer(), getBrandAccounts(clientId)]);
   const period = await getBrandPeriod(accounts.map((a) => a.id), await searchParams);
   const amazon = accounts.find((a) => a.marketplace === "Amazon");
-  const [{ markets, extra, prevFrom, prevTo }, search, returns] = await Promise.all([getBrand(accounts, period.from, period.to, period.days), amazon ? getSearch(amazon) : Promise.resolve(null), getReturns(accounts, period.from, period.to)]);
+  const [{ markets, extra, prevFrom, prevTo }, search, returns, work] = await Promise.all([getBrand(accounts, period.from, period.to, period.days), amazon ? getSearch(amazon) : Promise.resolve(null), getReturns(accounts, period.from, period.to), getClientWork(clientId, period.from, period.to)]);
   const live = markets.filter((m) => m.hasData);
   const t = brandTotals(markets);
   const found = findings(markets, extra);
@@ -165,6 +165,19 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
               )}
             </section>
           </div>
+
+          {work.available && (work.waiting.length + work.inProgress.length + work.completed.length) > 0 && (
+            <Section title="Pexeta's work" sub="From Pexeta's task tracker." action={<Link href={`/b/${clientId}/work${q}`} className="text-xs font-semibold text-brand hover:underline">All work</Link>}>
+              <div className="grid gap-6 px-4 py-4 md:grid-cols-3">
+                {([["Waiting on you", work.waiting, "text-amber-800"], ["In progress", work.inProgress, "text-navy"], ["Completed in these dates", work.completed, "text-emerald-800"]] as const).map(([label, items, cls]) => (
+                  <div key={label}>
+                    <h3 className={`text-sm font-bold ${cls}`}>{label} <span className="tabular">({items.length})</span></h3>
+                    <ul className="mt-1 space-y-1 text-sm">{items.slice(0, 4).map((t) => <li key={t.ref}>{t.title}</li>)}{items.length > 4 && <li className="text-xs text-muted">and {items.length - 4} more</li>}</ul>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
 
           {search?.hasData && amazon && (search.result.actions.length > 0 || search.result.progress) && (
             <Section title="Amazon search: actions and progress" sub="From Amazon Brand Analytics, weekly." action={<Link href={`/a/${amazon.id}/search`} className="text-xs font-semibold text-brand hover:underline">Search & listings</Link>}>

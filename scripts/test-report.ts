@@ -22,8 +22,12 @@ const markets = [
   mk("Myntra", 32150, 9000, 7628, 8000, null, [prod("MY1", "Almond oil 100 ml", 20000, 6000, 7009, 5000), prod("MY2", "Face wash", 12150, 3000, 619, 3000)]),
 ];
 const wb = buildBrandWorkbook({ clientName: "Test Brand", period: { from: "2026-09-01", to: "2026-09-03" }, prevFrom: "2026-08-29", prevTo: "2026-08-31", markets, extra: [{ tone: "bad", title: "FirstCry paid about ₹1,000 less than its usual rate", detail: "On 2 product(s)." }], today: "2026-11-02" });
+const wb2 = buildBrandWorkbook({ clientName: "Test Brand", period: { from: "2026-09-01", to: "2026-09-03" }, prevFrom: "2026-08-29", prevTo: "2026-08-31", markets, extra: [], today: "2026-11-02",
+  work: { waiting: [{ ref: 7, title: "Share new product photos", marketplace: "Amazon", need: "Photos of the 200 ml pack", due_date: "2026-11-05", done_at: null }], inProgress: [], completed: [{ ref: 3, title: "Fixed suppressed listing", marketplace: "Amazon", need: "", due_date: "2026-10-20", done_at: "2026-10-19T10:00:00Z" }] } });
+if (out2()) wb2.xlsx.writeFile(out2()!).then(() => console.log(`wrote ${out2()}`));
 const names = wb.worksheets.map((w) => w.name);
 let fail = 0;
+function out2() { return process.argv[3]; }
 const check = (label: string, ok: boolean) => { console.log(`${ok ? "ok  " : "FAIL"} ${label}`); if (!ok) fail++; };
 check("four sheets", names.join(",") === "Summary,By marketplace,Products,Daily sales");
 const bm = wb.getWorksheet("By marketplace")!;
@@ -32,6 +36,7 @@ const totSales = (bm.getCell(totRow, 2).value as { result: number }).result;
 check(`total sales ${totSales}`, totSales === 182150);
 const totProfit = (bm.getCell(totRow, 11).value as { result: number }).result;
 check(`total profit ${totProfit}`, Math.abs(totProfit - markets.reduce((s, m) => s + m.profit, 0)) < 0.01);
+check("work sheet", !!wb2.getWorksheet("Pexeta's work"));
 check("products rows", wb.getWorksheet("Products")!.getCell(9, 3).value === "Face wash");
 const out = process.argv[2];
 if (out) wb.xlsx.writeFile(out).then(() => console.log(`wrote ${out}`));

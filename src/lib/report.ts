@@ -51,9 +51,11 @@ export type BrandReportInput = {
   markets: MarketSummary[]; extra: Finding[]; today?: string;
   search?: SearchResult | null;      // Amazon Brand Analytics: actions and progress, when uploaded
   returns?: ReturnsResult | null;    // why customers returned products, all marketplaces
+  work?: { waiting: WorkLine[]; inProgress: WorkLine[]; completed: WorkLine[] } | null;   // client-visible Pexeta Ops tasks
 };
+type WorkLine = { ref: number; title: string; marketplace: string; need: string; due_date: string; done_at: string | null };
 
-export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, markets, extra, today, search, returns }: BrandReportInput): ExcelJS.Workbook {
+export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, markets, extra, today, search, returns, work }: BrandReportInput): ExcelJS.Workbook {
   const live = markets.filter((m) => m.hasData);
   const t = brandTotals(markets);
   const found = findings(markets, extra);
@@ -286,6 +288,30 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
     }
     setup(rt, false);
     sheets.push(rt);
+  }
+
+  // ---------- Pexeta's work ----------
+  if (work && work.waiting.length + work.inProgress.length + work.completed.length) {
+    const wk = wb.addWorksheet("Pexeta's work", { views: [{ showGridLines: false }] });
+    wk.columns = [{ width: 62 }, { width: 14 }, { width: 18 }, { width: 10 }];
+    title(wk, `${clientName}: Pexeta's work`, `From Pexeta's task tracker. Completed: ${periodText}, closed by Pexeta's VP.`, 4);
+    let wr = 4;
+    const block = (heading: string, items: WorkLine[], dateHead: string, dateOf: (t: WorkLine) => string) => {
+      if (!items.length) return;
+      header(wk, wr, [heading, "Marketplace", dateHead, "Ref"]); wr++;
+      for (const t of items) {
+        wk.getRow(wr).values = [t.need ? `${t.title}\nWhat we need: ${t.need}` : t.title, t.marketplace, dateOf(t), `PX-${t.ref}`];
+        wk.getCell(wr, 1).alignment = { wrapText: true, vertical: "top" };
+        if (t.need) wk.getRow(wr).height = 28;
+        wr++;
+      }
+      wr++;
+    };
+    block(`Waiting on you (${work.waiting.length})`, work.waiting, "Due", (t) => dateLabel(t.due_date));
+    block(`In progress (${work.inProgress.length})`, work.inProgress, "Due", (t) => dateLabel(t.due_date));
+    block(`Completed (${work.completed.length})`, work.completed, "Completed", (t) => dateLabel(t.done_at));
+    setup(wk, false);
+    sheets.splice(1, 0, wk);
   }
 
   for (const ws of sheets) {
