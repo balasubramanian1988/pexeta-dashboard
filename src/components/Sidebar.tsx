@@ -62,7 +62,7 @@ export default function Sidebar({ name, team, accounts }: Props) {
           <>
             <div className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{brandAccounts[0].client_name}</div>
             {item(`/b/${brandId}${range}`, "All marketplaces", LayoutGrid, path === `/b/${brandId}`)}
-            {item(`/b/${brandId}/returns${range}`, "Returns insights", Undo2, path === `/b/${brandId}/returns`)}
+            {item(`/b/${brandId}/returns${range}`, "Returns & reimbursements", Undo2, path === `/b/${brandId}/returns`)}
             {item(`/b/${brandId}/work${range}`, "Pexeta's work", ListChecks, path === `/b/${brandId}/work`)}
             {brandAccounts.map((a) => (
               <div key={a.id}>

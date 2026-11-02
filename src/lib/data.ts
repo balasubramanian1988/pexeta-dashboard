@@ -10,9 +10,10 @@ import { computeMyntra, type MyAdStyleRow, type MyDeductionRow, type MyInvoiceRo
 import type { Finding, MarketSummary } from "./engine/brand";
 import { dailyNetSales } from "./engine/summaries";
 import { computeFcStock, computeFirstCry, fcAdsInPeriod, type FcAdRow, type FcProduct, type FcRateRow, type FcReconRow, type FcReturnRow, type FcSaleRow } from "./engine/firstcry";
-import { addDays, earliestDataDate } from "./period";
+import { addDays, earliestDataDate, latestDataDate } from "./period";
 import { computeSearch, type AsinRow, type BasketRow, type QueryRow } from "./engine/search";
 import { computeReturns, type ReturnLine } from "./engine/returns";
+import { computeReturnsMoney, type AmzReturnRow, type FeeRow, type ReimbRow, type RefundRow } from "./engine/returnsMoney";
 
 type Sb = Awaited<ReturnType<typeof createClient>>;
 type Res<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
@@ -346,4 +347,53 @@ export const getClientWork = cache(async (clientId: string, from: string, to: st
     completed: rows.filter((r) => r.state === "completed" && day(r.done_at) >= from && day(r.done_at) <= to).sort((a, b) => (b.done_at ?? "").localeCompare(a.done_at ?? "")),
     available: true,
   };
+});
+
+// ---------- Returns in rupees, and Amazon reimbursement checks ----------
+const REFUND_COLS = "posted_date, order_id, sku, asin, quantity, description, fulfillment, product_sales, shipping_credits, gift_wrap_credits, promotional_rebates, tax_liable, selling_fees, fba_fees, other_transaction_fees, total";
+const REFUND_NUM = ["quantity", "product_sales", "shipping_credits", "gift_wrap_credits", "promotional_rebates", "tax_liable", "selling_fees", "fba_fees", "other_transaction_fees", "total"];
+const chunks = <T,>(xs: T[], n = 200) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+
+export const getReturnsMoney = cache(async (accounts: Account[], from: string, to: string) => {
+  const sb = await createClient();
+  const amazon = accounts.find((a) => a.marketplace === "Amazon");
+  const firstcry = accounts.find((a) => a.marketplace === "FirstCry");
+  const myntra = accounts.find((a) => a.marketplace === "Myntra");
+
+  let refunds: RefundRow[] = [], reimbursementsInPeriod: ReimbRow[] = [];
+  const orderFees: FeeRow[] = [], reimbursements: ReimbRow[] = [], amazonReturns: AmzReturnRow[] = [];
+  let costPerUnit = (_sku: string, _asin: string, price: number) => price * 0.25;
+  let nameOf = (asin: string, sku: string) => asin || sku;
+  let asOf = to;
+  if (amazon) {
+    const id = amazon.id;
+    [refunds, reimbursementsInPeriod] = await Promise.all([
+      fetchAll<RefundRow>((f, t) => sb.from("sd_transactions").select(REFUND_COLS).eq("account_id", id).eq("type", "Refund").gte("posted_date", from).lte("posted_date", to).order("row_hash").range(f, t)).then((r) => numify(r, REFUND_NUM)),
+      fetchAll<ReimbRow>((f, t) => sb.from("sd_transactions").select("posted_date, order_id, sku, description, quantity, total").eq("account_id", id).ilike("description", "%reimburs%").gte("posted_date", from).lte("posted_date", to).order("row_hash").range(f, t)).then((r) => numify(r, ["quantity", "total"])),
+    ]);
+    const orders = [...new Set(refunds.map((r) => r.order_id).filter(Boolean))];
+    for (const part of chunks(orders)) {
+      const [fees, reimb, rets] = await Promise.all([
+        fetchAll<FeeRow>((f, t) => sb.from("sd_transactions").select("order_id, sku, selling_fees, fba_fees, other_transaction_fees").eq("account_id", id).eq("type", "Order").in("order_id", part).order("row_hash").range(f, t)).then((r) => numify(r, ["selling_fees", "fba_fees", "other_transaction_fees"])),
+        fetchAll<ReimbRow>((f, t) => sb.from("sd_transactions").select("posted_date, order_id, sku, description, quantity, total").eq("account_id", id).ilike("description", "%reimburs%").in("order_id", part).order("row_hash").range(f, t)).then((r) => numify(r, ["quantity", "total"])),
+        fetchAll<AmzReturnRow>((f, t) => sb.from("sd_returns").select("return_date, order_id, sku, asin, quantity, disposition, reason").eq("account_id", id).in("order_id", part).order("row_key").range(f, t)).then((r) => numify(r, ["quantity"])),
+      ]);
+      orderFees.push(...fees); reimbursements.push(...reimb); amazonReturns.push(...rets);
+    }
+    const [settings, products, latest] = await Promise.all([
+      fetchAll<ProductSetting>((f, t) => sb.from("sd_product_settings").select("asin, cost_pct, cost_per_unit, lead_time_days, warehouse_stock").eq("account_id", id).range(f, t)),
+      fetchAll<{ asin: string; title: string; short_name: string }>((f, t) => sb.from("sd_products").select("asin, title, short_name").eq("account_id", id).range(f, t)),
+      latestDataDate(id),
+    ]);
+    const set = new Map(settings.map((x) => [x.asin, x]));
+    const names = new Map(products.map((p) => [p.asin, p.short_name || p.title]));
+    // Product cost: the seller's rupees per unit, else their %, else the account default %, of the price refunded.
+    costPerUnit = (_sku, asin, price) => { const s = set.get(asin); if (s?.cost_per_unit != null) return Number(s.cost_per_unit); return price * Number(s?.cost_pct ?? amazon.default_cost_pct); };
+    nameOf = (asin, sku) => names.get(asin) || sku || asin;
+    asOf = latest ?? to;
+  }
+  const fc = firstcry ? await fetchAll<{ rto_total: number; sr_total: number; rto_qty: number; sr_qty: number }>((f, t) => sb.from("sd_fc_recon").select("rto_total, sr_total, rto_qty, sr_qty").eq("account_id", firstcry.id).gte("return_date", from).lte("return_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["rto_total", "sr_total", "rto_qty", "sr_qty"])) : null;
+  const myReverse = myntra ? await fetchAll<{ expected_settled: number; logistics: number }>((f, t) => sb.from("sd_my_settlement").select("expected_settled, logistics").eq("account_id", myntra.id).eq("kind", "reverse").gte("order_date", from).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["expected_settled", "logistics"])) : null;
+
+  return computeReturnsMoney({ refunds, orderFees, reimbursements, reimbursementsInPeriod, amazonReturns, costPerUnit, nameOf, asOf, fc, myReverse });
 });

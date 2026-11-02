@@ -5,6 +5,7 @@ import { eachDay } from "@/lib/engine/summaries";
 import { dateLabel } from "@/lib/format";
 import type { SearchResult } from "@/lib/engine/search";
 import { THEME_LABEL, type ReturnsResult } from "@/lib/engine/returns";
+import type { ReturnsMoney } from "@/lib/engine/returnsMoney";
 
 const NAVY = "FF0B2A4A", ORANGE = "FFF2871E", ICE = "FFEEF4FA", RED_FILL = "FFFDECEC", GREEN = "FF1F7A4D", RED = "FFB42318", GREY = "FF64748B";
 const FONT = "Arial";
@@ -51,11 +52,12 @@ export type BrandReportInput = {
   markets: MarketSummary[]; extra: Finding[]; today?: string;
   search?: SearchResult | null;      // Amazon Brand Analytics: actions and progress, when uploaded
   returns?: ReturnsResult | null;    // why customers returned products, all marketplaces
+  money?: ReturnsMoney | null;       // returns in rupees and Amazon reimbursement claims
   work?: { waiting: WorkLine[]; inProgress: WorkLine[]; completed: WorkLine[] } | null;   // client-visible Pexeta Ops tasks
 };
 type WorkLine = { ref: number; title: string; marketplace: string; need: string; due_date: string; done_at: string | null };
 
-export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, markets, extra, today, search, returns, work }: BrandReportInput): ExcelJS.Workbook {
+export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, markets, extra, today, search, returns, work, money }: BrandReportInput): ExcelJS.Workbook {
   const live = markets.filter((m) => m.hasData);
   const t = brandTotals(markets);
   const found = findings(markets, extra);
@@ -263,11 +265,25 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
   }
 
   // ---------- Returns ----------
-  if (returns && returns.total) {
+  if ((returns && returns.total) || money?.amazon) {
+    returns = returns ?? { total: 0, byTheme: [], byMarketplace: [], products: [], actions: [], lines: [] };
     const rt = wb.addWorksheet("Returns", { views: [{ showGridLines: false }] });
-    rt.columns = [{ width: 44 }, { width: 14 }, { width: 14 }, { width: 60 }];
-    title(rt, `${clientName}: why products came back`, `${periodText}. Every returned or undelivered unit, by theme.`, 4);
+    rt.columns = [{ width: 46 }, { width: 22 }, { width: 16 }, { width: 56 }];
+    title(rt, `${clientName}: returns and reimbursements`, `${periodText}. Amounts include GST. Claim values are estimates; Amazon decides the final amount.`, 4);
     let rr = 4;
+    if (money) {
+      header(rt, rr, ["In rupees", "Amount", "", ""]); rr++;
+      const lines: [string, number][] = [
+        ["Sales reversed by returns (refunds, debit notes, deductions)", money.total.reversed],
+        ["Money lost to returns (fees not refunded, return shipping, stock written off)", money.total.lost],
+        ["Recovered from Amazon in these dates", money.amazon?.recovered ?? 0],
+        ["To claim from Amazon now", money.amazon?.claimable ?? 0],
+        ["To claim from Amazon after the waiting period", money.amazon?.pending ?? 0],
+      ];
+      for (const [label, v] of lines) { rt.getRow(rr).values = [label, v]; rt.getCell(rr, 2).numFmt = RS; rt.getCell(rr, 1).alignment = { wrapText: true }; rr++; }
+      rr++;
+    }
+    if (returns.total) {
     header(rt, rr, ["Theme", "Units", "Share", ""]); rr++;
     const first = rr;
     for (const t of returns.byTheme) { rt.getRow(rr).values = [THEME_LABEL[t.theme], t.units, f(`IF(SUM($B$${first}:$B$${first + returns.byTheme.length - 1})=0,0,B${rr}/SUM($B$${first}:$B$${first + returns.byTheme.length - 1}))`, t.share)]; rt.getCell(rr, 3).numFmt = PCT; rr++; }
@@ -285,6 +301,19 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
       const said = String(rt.getCell(rr, 4).value ?? "");
       if (said.length > 70) rt.getRow(rr).height = 13 * Math.min(4, Math.ceil(said.length / 70));
       rr++;
+    }
+    }
+    if (money?.amazon?.claims.length) {
+      rr++;
+      header(rt, rr, ["Amazon claims: product and reason", "Order", "Status", "Est. value"]); rr++;
+      for (const c of money.amazon.claims) {
+        rt.getRow(rr).values = [`${c.name}: ${c.kind === "not_returned" ? "refunded, not returned" : "damaged by Amazon / courier"}`, c.order_id, c.status === "claim_now" ? "Claim now" : `From ${dateLabel(c.claimFrom)}`, c.value];
+        rt.getCell(rr, 4).numFmt = RS; rt.getCell(rr, 1).alignment = { wrapText: true, vertical: "top" }; rt.getCell(rr, 4).alignment = { horizontal: "left" };
+        rr++;
+      }
+      const first = rr - money.amazon.claims.length;
+      rt.getRow(rr).values = ["Total", "", "", f(`SUM(D${first}:D${rr - 1})`, money.amazon.claims.reduce((s, c) => s + c.value, 0))];
+      rt.getCell(rr, 4).numFmt = RS; rt.getRow(rr).font = { bold: true };
     }
     setup(rt, false);
     sheets.push(rt);
