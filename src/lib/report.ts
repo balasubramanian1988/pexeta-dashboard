@@ -6,6 +6,7 @@ import { dateLabel } from "@/lib/format";
 import type { SearchResult } from "@/lib/engine/search";
 import { THEME_LABEL, type ReturnsResult } from "@/lib/engine/returns";
 import type { ReturnsMoney } from "@/lib/engine/returnsMoney";
+import { reimbursementReason } from "@/lib/engine/warehouseClaims";
 
 const NAVY = "FF0B2A4A", ORANGE = "FFF2871E", ICE = "FFEEF4FA", RED_FILL = "FFFDECEC", GREEN = "FF1F7A4D", RED = "FFB42318", GREY = "FF64748B";
 const FONT = "Arial";
@@ -265,7 +266,7 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
   }
 
   // ---------- Returns ----------
-  if ((returns && returns.total) || money?.amazon) {
+  if ((returns && returns.total) || money?.amazon || money?.warehouse) {
     returns = returns ?? { total: 0, byTheme: [], byMarketplace: [], products: [], actions: [], lines: [] };
     const rt = wb.addWorksheet("Returns", { views: [{ showGridLines: false }] });
     rt.columns = [{ width: 46 }, { width: 22 }, { width: 16 }, { width: 56 }];
@@ -277,8 +278,12 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
         ["Sales reversed by returns (refunds, debit notes, deductions)", money.total.reversed],
         ["Money lost to returns (fees not refunded, return shipping, stock written off)", money.total.lost],
         ["Recovered from Amazon in these dates", money.amazon?.recovered ?? 0],
-        ["To claim from Amazon now", money.amazon?.claimable ?? 0],
-        ["To claim from Amazon after the waiting period", money.amazon?.pending ?? 0],
+        ["To claim from Amazon now", (money.amazon?.claimable ?? 0) + (money.warehouse?.claimable ?? 0)],
+        ["To claim from Amazon after the waiting period", (money.amazon?.pending ?? 0) + (money.warehouse?.pending ?? 0)],
+        ...(money.warehouse ? [
+          ["  of which lost or damaged in Amazon's warehouses (now + later)", money.warehouse.claimable + money.warehouse.pending],
+          ["Carrier damage on the way in, to check (not in the totals)", money.warehouse.toCheck],
+        ] as [string, number][] : []),
       ];
       for (const [label, v] of lines) { rt.getRow(rr).values = [label, v]; rt.getCell(rr, 2).numFmt = RS; rt.getCell(rr, 1).alignment = { wrapText: true }; rr++; }
       rr++;
@@ -314,6 +319,24 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
       const first = rr - money.amazon.claims.length;
       rt.getRow(rr).values = ["Total", "", "", f(`SUM(D${first}:D${rr - 1})`, money.amazon.claims.reduce((s, c) => s + c.value, 0))];
       rt.getCell(rr, 4).numFmt = RS; rt.getRow(rr).font = { bold: true };
+    }
+    if (money?.warehouse?.claims.length) {
+      const wc = money.warehouse.claims;
+      rr += 2;
+      header(rt, rr, ["Lost or damaged in Amazon's warehouses", "Warehouse, date, reference", "Status", "Est. value"]); rr++;
+      for (const c of wc) {
+        rt.getRow(rr).values = [`${c.name}: ${c.units} unit${c.units > 1 ? "s" : ""} ${c.kind === "lost" ? "lost" : c.kind === "damaged" ? "damaged in warehouse" : "received damaged"} (${c.fnsku})`, `${c.fc}, ${dateLabel(c.date)}${c.reference_id ? `, ${c.reference_id}` : ""}`, c.status === "claim_now" ? "Claim now" : c.status === "wait" ? "Amazon searching" : "Check", c.value];
+        rt.getCell(rr, 4).numFmt = RS; rt.getCell(rr, 1).alignment = { wrapText: true, vertical: "top" }; rt.getCell(rr, 2).alignment = { wrapText: true, vertical: "top" }; rt.getCell(rr, 4).alignment = { horizontal: "left" };
+        rr++;
+      }
+      const first = rr - wc.length;
+      rt.getRow(rr).values = ["Total", "", "", f(`SUM(D${first}:D${rr - 1})`, wc.reduce((s, c) => s + c.value, 0))];
+      rt.getCell(rr, 4).numFmt = RS; rt.getRow(rr).font = { bold: true }; rr++;
+      if (money.warehouse.reimbursedByReason.length) {
+        rr++;
+        header(rt, rr, ["Amazon paid in these dates, by reason", "Reimbursements", "", "Amount"]); rr++;
+        for (const x of money.warehouse.reimbursedByReason) { rt.getRow(rr).values = [reimbursementReason(x.reason), x.count, "", x.amount]; rt.getCell(rr, 4).numFmt = RS; rt.getCell(rr, 4).alignment = { horizontal: "left" }; rr++; }
+      }
     }
     setup(rt, false);
     sheets.push(rt);

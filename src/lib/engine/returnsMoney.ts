@@ -1,6 +1,7 @@
 // What returns cost in rupees, and what Amazon may owe back (Sellerboard-style reimbursement checks).
 // Pure functions. Amounts include GST unless a name says otherwise. Claim values are estimates for the team to
 // verify in Seller Central before raising a case; Amazon decides the final amount.
+import type { WarehouseClaims } from "./warehouseClaims";
 
 export type RefundRow = {
   posted_date: string; order_id: string; sku: string; asin: string; quantity: number; description: string;
@@ -37,6 +38,7 @@ export type ReturnsMoney = {
   } | null;
   firstcry: { debited: number; rtoDebited: number; returnDebited: number; units: number } | null;
   myntra: { deducted: number; reverseLogistics: number; lines: number } | null;
+  warehouse?: WarehouseClaims | null;  // stock lost or damaged in Amazon's warehouses (Inventory Ledger), added by the data layer
   total: {
     reversed: number;     // sales taken back: Amazon refunds, FirstCry debit notes, Myntra reverse settlements
     lost: number;         // money that does not come back: fees Amazon kept, Myntra return shipping, stock written off

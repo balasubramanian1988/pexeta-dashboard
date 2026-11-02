@@ -4,6 +4,7 @@ import { Empty, Kpi, PageHeader, PeriodNote, Section, StatusPill } from "@/compo
 import { getBrandAccounts, getViewer } from "@/lib/auth";
 import { getReturns, getReturnsMoney } from "@/lib/data";
 import { THEME_LABEL, type ReturnTheme } from "@/lib/engine/returns";
+import { WAREHOUSE_WAIT_DAYS, reimbursementReason } from "@/lib/engine/warehouseClaims";
 import { compactRupees, count, dateLabel, percent, rupees } from "@/lib/format";
 import { getBrandPeriod } from "@/lib/period";
 
@@ -19,8 +20,12 @@ export default async function ReturnsPage({ params, searchParams }: { params: Pr
   const [r, money] = await Promise.all([getReturns(accounts, period.from, period.to), getReturnsMoney(accounts, period.from, period.to)]);
   const a = money.amazon;
   const now = a?.claims.filter((c) => c.status === "claim_now") ?? [];
-  const wait = a?.claims.filter((c) => c.status === "wait") ?? [];
   const team = viewer.kind === "team";
+  const w = money.warehouse ?? null;
+  const wNow = w?.claims.filter((c) => c.status === "claim_now") ?? [];
+  const claimNow = (a?.claimable ?? 0) + (w?.claimable ?? 0);
+  const claimLater = (a?.pending ?? 0) + (w?.pending ?? 0);
+  const casesNow = now.length + wNow.length;
 
   return (
     <>
@@ -28,13 +33,13 @@ export default async function ReturnsPage({ params, searchParams }: { params: Pr
         sub={<><PeriodNote from={period.from} to={period.to} />. Every returned or undelivered unit, put into one theme from the marketplace&apos;s reason and the customer&apos;s own words.</>}
         action={<PeriodPicker period={period} basePath={`/b/${clientId}/returns`} />} />
 
-      {(a || money.firstcry || money.myntra) && (
+      {(a || w || money.firstcry || money.myntra) && (
         <>
           <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
             <Kpi label="Sales reversed by returns" value={compactRupees(money.total.reversed)} sub="Refunds, debit notes and return deductions" />
             <Kpi label="Money lost to returns" value={compactRupees(money.total.lost)} tone={money.total.lost > 0 ? "bad" : undefined} sub="Fees not refunded, return shipping, stock written off" />
             <Kpi label="Recovered from Amazon" value={compactRupees(a?.recovered ?? 0)} tone={(a?.recovered ?? 0) > 0 ? "good" : undefined} sub={`${a?.recoveredItems.length ?? 0} reimbursements in these dates`} />
-            <Kpi label="To claim from Amazon" value={compactRupees(a?.claimable ?? 0)} tone={(a?.claimable ?? 0) > 0 ? "good" : undefined} sub={`${now.length} case${now.length === 1 ? "" : "s"} now${wait.length ? ` · ${compactRupees(a?.pending ?? 0)} more after the waiting period (${wait.length})` : ""}`} />
+            <Kpi label="To claim from Amazon" value={compactRupees(claimNow)} tone={claimNow > 0 ? "good" : undefined} sub={`${casesNow} case${casesNow === 1 ? "" : "s"} now${claimLater ? ` · ${compactRupees(claimLater)} more after the waiting period` : ""}`} />
           </div>
           <p className="mb-6 text-xs text-muted">Amounts include GST. Claim values are estimates of the item value refunded; Pexeta checks each case in Seller Central before raising it, and Amazon decides the final amount.</p>
 
@@ -65,6 +70,40 @@ export default async function ReturnsPage({ params, searchParams }: { params: Pr
                 ))}</tbody>
               </table></div>
               {!team && a.claims.length > 15 && <p className="border-t border-line px-4 py-2.5 text-xs text-muted">and {a.claims.length - 15} more, handled by Pexeta.</p>}
+            </Section>
+          )}
+
+          {w && w.claims.length > 0 && (
+            <Section title="Lost or damaged in Amazon's warehouses" sub={<>From the Inventory Ledger: units Amazon lost or damaged that it has not found or paid for. Amazon usually searches for about {WAREHOUSE_WAIT_DAYS} days first. Value is Amazon&apos;s own reimbursement rate for the product where it has paid before, otherwise the average selling price.</>}>
+              <div className="grid grid-cols-2 gap-3 border-b border-line px-4 py-3 md:grid-cols-4">
+                <div><div className="text-xs text-muted">Claim now</div><div className="tabular font-bold text-emerald-700">{compactRupees(w.claimable)}</div></div>
+                <div><div className="text-xs text-muted">Amazon still searching</div><div className="tabular font-bold text-navy">{compactRupees(w.pending)}</div></div>
+                <div><div className="text-xs text-muted">To check (carrier damage)</div><div className="tabular font-bold text-amber-700">{compactRupees(w.toCheck)}</div></div>
+                <div><div className="text-xs text-muted">Units</div><div className="tabular font-bold text-navy">{count(w.lostUnits)} lost · {count(w.damagedUnits)} damaged</div></div>
+              </div>
+              <div className="overflow-x-auto"><table className="tbl">
+                <thead><tr><th>Status</th><th>Product</th><th>Warehouse · date</th><th>What happened</th><th className="num">Units</th><th className="num">Est. value</th></tr></thead>
+                <tbody>{w.claims.slice(0, team ? 200 : 15).map((c, i) => (
+                  <tr key={`${c.kind}-${c.fnsku}-${c.reference_id}-${c.date}-${i}`}>
+                    <td>{c.status === "claim_now" ? <StatusPill tone="green">Claim now</StatusPill> : c.status === "wait" ? <StatusPill tone="grey">Amazon searching</StatusPill> : <StatusPill tone="amber">Check</StatusPill>}</td>
+                    <td className="max-w-56">{c.name}<div className="text-[11px] text-faint">{c.sku} · {c.fnsku}</div></td>
+                    <td className="whitespace-nowrap text-xs">{c.fc} · {dateLabel(c.date)}{c.reference_id && <div className="text-[11px] text-faint">Ref {c.reference_id}</div>}</td>
+                    <td className="text-xs text-muted">{c.kind === "lost" ? "Lost in warehouse" : c.kind === "damaged" ? "Damaged in warehouse" : "Received damaged"}<div className="text-[11px]">{c.detail}</div></td>
+                    <td className="num">{count(c.units)}</td>
+                    <td className="num font-semibold">{rupees(c.value)}{team && <div className="text-[11px] font-normal text-faint">{c.valueBasis === "amazon_rate" ? "Amazon rate" : "selling price"}</div>}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+              {!team && w.claims.length > 15 && <p className="border-t border-line px-4 py-2.5 text-xs text-muted">and {w.claims.length - 15} more, handled by Pexeta.</p>}
+            </Section>
+          )}
+
+          {w && w.reimbursedByReason.length > 0 && (
+            <Section title={`Amazon paid ${compactRupees(w.reimbursedTotal)} in these dates`} sub="From the Reimbursements report, by reason. Customer-return reimbursements cover refunded items that did not come back.">
+              <table className="tbl">
+                <thead><tr><th>Reason</th><th className="num">Reimbursements</th><th className="num">Amount</th></tr></thead>
+                <tbody>{w.reimbursedByReason.map((x) => <tr key={x.reason}><td>{reimbursementReason(x.reason)}</td><td className="num">{count(x.count)}</td><td className="num text-emerald-700">{rupees(x.amount)}</td></tr>)}</tbody>
+              </table>
             </Section>
           )}
 

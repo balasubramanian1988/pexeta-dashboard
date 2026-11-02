@@ -18,6 +18,8 @@ export type ReportType =
   | "ba_sqp"
   | "ba_scp"
   | "ba_basket"
+  | "inv_ledger"
+  | "reimbursements"
   | "fc_sales"
   | "fc_recon"
   | "fc_returns"
@@ -49,6 +51,8 @@ export const REPORT_LABEL: Record<ReportType, string> = {
   ba_sqp: "Brand Analytics: Search Query Performance (brand view)",
   ba_scp: "Brand Analytics: Search Catalogue Performance",
   ba_basket: "Brand Analytics: Market Basket Analysis",
+  inv_ledger: "Inventory Ledger (detailed view)",
+  reimbursements: "FBA Reimbursements",
   fc_sales: "FirstCry: Sales report",
   fc_recon: "FirstCry: Vendor Reconciliation",
   fc_returns: "FirstCry: Sale Return data",
@@ -63,7 +67,7 @@ export const REPORT_LABEL: Record<ReportType, string> = {
   my_styles: "Myntra: Style dashboard (product list)",
 };
 
-export const AMAZON_REPORTS: ReportType[] = ["unified_transactions", "orders", "business_child", "fba_inventory", "listings", "sp_advertised", "sd_advertised", "sb_keyword", "sb_purchases", "returns", "mtr_b2c", "mtr_b2b", "stock_transfer", "tax_document", "ba_sqp", "ba_scp", "ba_basket"];
+export const AMAZON_REPORTS: ReportType[] = ["unified_transactions", "orders", "business_child", "fba_inventory", "listings", "sp_advertised", "sd_advertised", "sb_keyword", "sb_purchases", "returns", "mtr_b2c", "mtr_b2b", "stock_transfer", "tax_document", "ba_sqp", "ba_scp", "ba_basket", "inv_ledger", "reimbursements"];
 export const FIRSTCRY_REPORTS: ReportType[] = ["fc_sales", "fc_recon", "fc_returns", "fc_products", "fc_ads"];
 export const MYNTRA_REPORTS: ReportType[] = ["my_orders", "my_settlement", "my_deductions", "my_returns", "my_invoice", "my_ads_styles", "my_styles"];
 
@@ -101,6 +105,12 @@ export function detectTable(headers: string[]): Detection {
   if (has("ad spend", "ad impressions", "ad mrp sales")) return { type: "fc_ads" };
   if (has("transaction id", "wallet name", "transaction type", "amount"))
     return { type: null, reason: "FirstCry Ads wallet log: it shows top-ups, not spend. Upload the Product Ads performance report instead." };
+
+  // Amazon FBA: inventory ledger and reimbursements
+  if (has("event type", "reference id", "reconciled quantity", "unreconciled quantity")) return { type: "inv_ledger" };
+  if (has("starting warehouse balance", "ending warehouse balance", "lost", "damaged"))
+    return { type: null, reason: "Inventory Ledger summary view: upload the Detailed view instead (Reports › Fulfilment › Inventory Ledger › Detailed view)." };
+  if (has("approval-date", "reimbursement-id", "amount-total")) return { type: "reimbursements" };
 
   // Amazon Brand Analytics
   if (has("search query", "search query volume", "impressions: brand count", "purchases: brand count")) return { type: "ba_sqp" };

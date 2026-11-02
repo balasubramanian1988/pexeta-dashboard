@@ -14,6 +14,7 @@ import { addDays, earliestDataDate, latestDataDate } from "./period";
 import { computeSearch, type AsinRow, type BasketRow, type QueryRow } from "./engine/search";
 import { computeReturns, type ReturnLine } from "./engine/returns";
 import { computeReturnsMoney, type AmzReturnRow, type FeeRow, type ReimbRow, type RefundRow } from "./engine/returnsMoney";
+import { computeWarehouseClaims, reimbursementReason, type LedgerRow, type ReimbursementRow } from "./engine/warehouseClaims";
 
 type Sb = Awaited<ReturnType<typeof createClient>>;
 type Res<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
@@ -371,6 +372,10 @@ export const getReturnsMoney = cache(async (accounts: Account[], from: string, t
       fetchAll<RefundRow>((f, t) => sb.from("sd_transactions").select(REFUND_COLS).eq("account_id", id).eq("type", "Refund").gte("posted_date", from).lte("posted_date", to).order("row_hash").range(f, t)).then((r) => numify(r, REFUND_NUM)),
       fetchAll<ReimbRow>((f, t) => sb.from("sd_transactions").select("posted_date, order_id, sku, description, quantity, total").eq("account_id", id).ilike("description", "%reimburs%").gte("posted_date", from).lte("posted_date", to).order("row_hash").range(f, t)).then((r) => numify(r, ["quantity", "total"])),
     ]);
+    // The Reimbursements report, when uploaded, is the complete record of what Amazon paid: use it for
+    // "recovered in these dates", and to match refunded orders that were already reimbursed.
+    const report = await fetchAll<ReimbursementRow>((f, t) => sb.from("sd_reimbursements").select("approval_date, reimbursement_id, order_id, reason, sku, fnsku, asin, condition, amount_per_unit, amount_total, qty_cash, qty_inventory, qty_total").eq("account_id", id).gte("approval_date", from).lte("approval_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["amount_per_unit", "amount_total", "qty_cash", "qty_inventory", "qty_total"]));
+    if (report.length) reimbursementsInPeriod = report.map((r) => ({ posted_date: r.approval_date, order_id: r.order_id, sku: r.sku, description: `FBA reimbursement: ${reimbursementReason(r.reason)}`, quantity: r.qty_total, total: r.amount_total }));
     const orders = [...new Set(refunds.map((r) => r.order_id).filter(Boolean))];
     for (const part of chunks(orders)) {
       const [fees, reimb, rets] = await Promise.all([
@@ -378,7 +383,8 @@ export const getReturnsMoney = cache(async (accounts: Account[], from: string, t
         fetchAll<ReimbRow>((f, t) => sb.from("sd_transactions").select("posted_date, order_id, sku, description, quantity, total").eq("account_id", id).ilike("description", "%reimburs%").in("order_id", part).order("row_hash").range(f, t)).then((r) => numify(r, ["quantity", "total"])),
         fetchAll<AmzReturnRow>((f, t) => sb.from("sd_returns").select("return_date, order_id, sku, asin, quantity, disposition, reason").eq("account_id", id).in("order_id", part).order("row_key").range(f, t)).then((r) => numify(r, ["quantity"])),
       ]);
-      orderFees.push(...fees); reimbursements.push(...reimb); amazonReturns.push(...rets);
+      const rep = await fetchAll<{ approval_date: string; order_id: string; sku: string; reason: string; qty_total: number; amount_total: number }>((f, t) => sb.from("sd_reimbursements").select("approval_date, order_id, sku, reason, qty_total, amount_total").eq("account_id", id).in("order_id", part).order("row_key").range(f, t)).then((r) => numify(r, ["qty_total", "amount_total"]));
+      orderFees.push(...fees); reimbursements.push(...reimb, ...rep.map((r) => ({ posted_date: r.approval_date, order_id: r.order_id, sku: r.sku, description: `reimbursement ${r.reason}`, quantity: r.qty_total, total: r.amount_total }))); amazonReturns.push(...rets);
     }
     const [settings, products, latest] = await Promise.all([
       fetchAll<ProductSetting>((f, t) => sb.from("sd_product_settings").select("asin, cost_pct, cost_per_unit, lead_time_days, warehouse_stock").eq("account_id", id).range(f, t)),
@@ -395,5 +401,35 @@ export const getReturnsMoney = cache(async (accounts: Account[], from: string, t
   const fc = firstcry ? await fetchAll<{ rto_total: number; sr_total: number; rto_qty: number; sr_qty: number }>((f, t) => sb.from("sd_fc_recon").select("rto_total, sr_total, rto_qty, sr_qty").eq("account_id", firstcry.id).gte("return_date", from).lte("return_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["rto_total", "sr_total", "rto_qty", "sr_qty"])) : null;
   const myReverse = myntra ? await fetchAll<{ expected_settled: number; logistics: number }>((f, t) => sb.from("sd_my_settlement").select("expected_settled, logistics").eq("account_id", myntra.id).eq("kind", "reverse").gte("order_date", from).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["expected_settled", "logistics"])) : null;
 
-  return computeReturnsMoney({ refunds, orderFees, reimbursements, reimbursementsInPeriod, amazonReturns, costPerUnit, nameOf, asOf, fc, myReverse });
+  const money = computeReturnsMoney({ refunds, orderFees, reimbursements, reimbursementsInPeriod, amazonReturns, costPerUnit, nameOf, asOf, fc, myReverse });
+  const warehouse = amazon ? await getWarehouseClaims(amazon, from, to) : null;
+  if (warehouse) {
+    money.warehouse = warehouse;
+    // "To check" (carrier damage on the way in) is left out of the total until the team confirms it.
+    money.total.recoverable += warehouse.claimable + warehouse.pending;
+  }
+  return money;
+});
+
+// ---------- Amazon: stock lost or damaged in Amazon's warehouses ----------
+export const getWarehouseClaims = cache(async (account: Account, from: string, to: string) => {
+  const sb = await createClient();
+  const [ledger, reimbursements, products, latest] = await Promise.all([
+    fetchAll<LedgerRow>((f, t) => sb.from("sd_inv_ledger").select("event_date, event_type, fnsku, asin, sku, reference_id, quantity, fc, disposition, reason, reconciled, unreconciled").eq("account_id", account.id).in("event_type", ["Adjustments", "Receipts"]).order("event_date").order("row_key").range(f, t)).then((r) => numify(r, ["quantity", "reconciled", "unreconciled"])),
+    fetchAll<ReimbursementRow>((f, t) => sb.from("sd_reimbursements").select("approval_date, reimbursement_id, order_id, reason, sku, fnsku, asin, condition, amount_per_unit, amount_total, qty_cash, qty_inventory, qty_total").eq("account_id", account.id).order("row_key").range(f, t)).then((r) => numify(r, ["amount_per_unit", "amount_total", "qty_cash", "qty_inventory", "qty_total"])),
+    fetchAll<{ asin: string; title: string; short_name: string }>((f, t) => sb.from("sd_products").select("asin, title, short_name").eq("account_id", account.id).range(f, t)),
+    latestDataDate(account.id),
+  ]);
+  if (!ledger.length && !reimbursements.length) return null;
+  const asOf = [latest ?? to, ...ledger.map((l) => l.event_date)].sort().pop()!;
+  // Average selling price incl. GST over the last 90 days, for products Amazon has never reimbursed.
+  const sales = await fetchAll<{ sku: string; quantity: number; product_sales: number; tax_liable: number }>((f, t) => sb.from("sd_transactions").select("sku, quantity, product_sales, tax_liable").eq("account_id", account.id).eq("type", "Order").gte("posted_date", addDays(asOf, -90)).lte("posted_date", asOf).order("row_hash").range(f, t)).then((r) => numify(r, ["quantity", "product_sales", "tax_liable"]));
+  const price = new Map<string, { v: number; q: number }>();
+  for (const x of sales) if (x.quantity > 0) { const p = price.get(x.sku) ?? { v: 0, q: 0 }; p.v += x.product_sales + x.tax_liable; p.q += x.quantity; price.set(x.sku, p); }
+  const names = new Map(products.map((p) => [p.asin, p.short_name || p.title]));
+  return computeWarehouseClaims({
+    ledger, reimbursements, from, to, asOf,
+    sellingPrice: (sku) => { const p = price.get(sku); return p && p.q ? p.v / p.q : null; },
+    nameOf: (asin, sku) => names.get(asin) || sku || asin,
+  });
 });

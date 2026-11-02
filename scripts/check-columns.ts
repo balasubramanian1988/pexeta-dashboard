@@ -13,7 +13,7 @@ for (const m of sql.matchAll(/create table if not exists (\w+) \(([\s\S]*?)\n\);
 (async () => {
   let bad = 0;
   const seen = new Set<string>();
-  const files = ["test-data", "test-data/firstcry", "test-data/myntra", "test-data/brand-analytics"].flatMap((d) => { try { return readdirSync(d).map((f) => join(d, f)).filter((f) => statSync(f).isFile()); } catch { return []; } });
+  const files = ["test-data", "test-data/firstcry", "test-data/myntra", "test-data/brand-analytics", "test-data/amazon-fba"].flatMap((d) => { try { return readdirSync(d).map((f) => join(d, f)).filter((f) => statSync(f).isFile()); } catch { return []; } });
   for (const path of files) for (const r of await parseUpload(path.split("/").pop()!, new Uint8Array(readFileSync(path)), "2026-10-22")) {
     if (!r.ok || !r.rows.length || seen.has(r.type)) continue;
     seen.add(r.type);

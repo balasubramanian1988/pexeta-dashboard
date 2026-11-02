@@ -22,6 +22,8 @@ const CONFLICT: Record<string, string> = {
   sd_ba_queries: "account_id,grain,period_end,query",
   sd_ba_asins: "account_id,grain,period_end,asin",
   sd_ba_basket: "account_id,grain,period_end,asin",
+  sd_inv_ledger: "account_id,row_key",
+  sd_reimbursements: "account_id,row_key",
   sd_my_orders: "account_id,order_line_id",
   sd_my_settlement: "account_id,row_key",
   sd_my_deductions: "account_id,invoice_ref",

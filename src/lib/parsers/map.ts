@@ -2,6 +2,7 @@
 import type { ReportType } from "./detect";
 import type { Table } from "./read";
 import { baAsins, baBasket, baQueries } from "./brandAnalytics";
+import { invLedger, reimbursements } from "./fbaClaims";
 import { fcAds, fcProducts, fcRecon, fcReturns, fcSales } from "./firstcry";
 import { myAdsStyles, myDeductions, myOrders, myReturns, mySettlement, myStyles } from "./myntra";
 import {
@@ -435,6 +436,8 @@ export function mapTable(type: ReportType, t: Table, ctx: Ctx): Parsed {
     case "ba_sqp": return baQueries(t, ctx.fileName);
     case "ba_scp": return baAsins(t, ctx.fileName);
     case "ba_basket": return baBasket(t, ctx.fileName);
+    case "inv_ledger": return invLedger(t);
+    case "reimbursements": return reimbursements(t);
     case "orders": return orders(t);
     case "listings": return listings(t, ctx);
     case "fba_inventory": return fbaInventory(t, ctx);
