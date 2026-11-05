@@ -133,7 +133,7 @@ export const getFirstCry = cache(async (account: Account, from: string, to: stri
   ]);
   const result = computeFirstCry({ sales, recon, rates, products: master.products, settings: master.settings, defaults: defaultsOf(account) });
   // Ads: a monthly row covers its whole month, so read from the first of the month the period starts in.
-  const adRows = await fetchAll<FcAdRow>((f, t) => sb.from("sd_fc_ads").select("grain, period_date, product_id, spend, impressions, clicks, ad_sales, orders").eq("account_id", account.id).gte("period_date", `${from.slice(0, 7)}-01`).lte("period_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["spend", "impressions", "clicks", "ad_sales", "orders"]));
+  const adRows = await fetchAll<FcAdRow>((f, t) => sb.from("sd_fc_ads").select("grain, period_date, product_id, campaign, spend, impressions, clicks, ad_sales, orders").eq("account_id", account.id).gte("period_date", `${from.slice(0, 7)}-01`).lte("period_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["spend", "impressions", "clicks", "ad_sales", "orders"]));
   const ads = adRows.length ? fcAdsInPeriod(adRows, from, to) : null;
   return { result, returns, master, ads, hasSales: sales.length > 0, hasRecon: recon.length > 0 };
 });

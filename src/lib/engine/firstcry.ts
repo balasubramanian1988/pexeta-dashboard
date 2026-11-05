@@ -247,13 +247,18 @@ export function returnReasons(rows: FcReturnRow[]) {
 
 // ---------- Ads ----------
 
-export type FcAdRow = { grain: string; period_date: string; product_id: string; spend: number; impressions: number; clicks: number; ad_sales: number; orders: number };
+export type FcAdRow = { grain: string; period_date: string; product_id: string; campaign?: string; spend: number; impressions: number; clicks: number; ad_sales: number; orders: number };
+/** Ad totals for one group (a month, campaign or product). */
+export type FcAdGroup = { key: string; spend: number; adSales: number; impressions: number; clicks: number; orders: number };
 export type FcAds = {
-  spend: number; adSales: number; clicks: number; orders: number;
+  spend: number; adSales: number; clicks: number; orders: number; impressions: number;
   roas: number | null;                 // ad sales at MRP ÷ spend
   spread: boolean;                     // true when some spend comes from a monthly total spread over its days
   byProduct: Map<string, number>;      // spend by product, only when the report is split by product
   daily: Map<string, number>;
+  byMonth: FcAdGroup[];                // the part of each month inside the period
+  byCampaign: FcAdGroup[];             // only when the report has a campaign column
+  byProductDetail: FcAdGroup[];        // only when the report is split by product
 };
 
 const daysInMonth = (ym: string) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m, 0)).getUTCDate(); };
@@ -261,12 +266,21 @@ const daysInMonth = (ym: string) => { const [y, m] = ym.split("-").map(Number); 
 /** Ad spend in [from, to]. Day-wise rows count as they are; a month with only a monthly row has its total
  *  spread evenly over its days, and the days inside the period are counted. */
 export function fcAdsInPeriod(rows: FcAdRow[], from: string, to: string): FcAds {
-  const out: FcAds = { spend: 0, adSales: 0, clicks: 0, orders: 0, roas: null, spread: false, byProduct: new Map(), daily: new Map() };
+  const out: FcAds = { spend: 0, adSales: 0, clicks: 0, orders: 0, impressions: 0, roas: null, spread: false, byProduct: new Map(), daily: new Map(), byMonth: [], byCampaign: [], byProductDetail: [] };
+  const months = new Map<string, FcAdGroup>(), camps = new Map<string, FcAdGroup>(), prods = new Map<string, FcAdGroup>();
+  const bump = (m: Map<string, FcAdGroup>, key: string, share: number, r: FcAdRow) => {
+    let g = m.get(key);
+    if (!g) { g = { key, spend: 0, adSales: 0, impressions: 0, clicks: 0, orders: 0 }; m.set(key, g); }
+    g.spend += r.spend * share; g.adSales += r.ad_sales * share; g.impressions += r.impressions * share; g.clicks += r.clicks * share; g.orders += r.orders * share;
+  };
   const dailyMonths = new Set(rows.filter((r) => r.grain === "day").map((r) => r.period_date.slice(0, 7)));
   const add = (date: string, share: number, r: FcAdRow) => {
-    out.spend += r.spend * share; out.adSales += r.ad_sales * share; out.clicks += r.clicks * share; out.orders += r.orders * share;
+    out.spend += r.spend * share; out.adSales += r.ad_sales * share; out.clicks += r.clicks * share; out.orders += r.orders * share; out.impressions += r.impressions * share;
     out.daily.set(date, (out.daily.get(date) ?? 0) + r.spend * share);
     if (r.product_id) out.byProduct.set(r.product_id, (out.byProduct.get(r.product_id) ?? 0) + r.spend * share);
+    bump(months, date.slice(0, 7), share, r);
+    if (r.campaign) bump(camps, r.campaign, share, r);
+    if (r.product_id) bump(prods, r.product_id, share, r);
   };
   for (const r of rows) {
     if (r.grain === "day") { if (r.period_date >= from && r.period_date <= to) add(r.period_date, 1, r); continue; }
@@ -279,5 +293,9 @@ export function fcAdsInPeriod(rows: FcAdRow[], from: string, to: string): FcAds 
     }
   }
   out.roas = out.spend > 0 ? out.adSales / out.spend : null;
+  const bySpend = (a: FcAdGroup, b: FcAdGroup) => b.spend - a.spend;
+  out.byMonth = [...months.values()].sort((a, b) => a.key.localeCompare(b.key));
+  out.byCampaign = [...camps.values()].sort(bySpend);
+  out.byProductDetail = [...prods.values()].sort(bySpend);
   return out;
 }

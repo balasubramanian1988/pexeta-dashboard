@@ -90,6 +90,19 @@ async function main() {
     expect("Ads: ROAS", fcAdsInPeriod(rows, "2026-10-01", "2026-10-31").roas ?? 0, 269113 / 85930.48, 0.0001);
     const withDay = [...rows, { grain: "day", period_date: "2026-10-03", product_id: "P1", spend: 100, impressions: 0, clicks: 0, ad_sales: 300, orders: 1 }];
     expect("Ads: day-wise rows replace the monthly total", fcAdsInPeriod(withDay, "2026-10-01", "2026-10-31").spend, 100, 0);
+    const oct = fcAdsInPeriod(rows, "2026-10-01", "2026-10-31");
+    expect("Ads: impressions", oct.impressions, 9408933, 0.5);
+    expect("Ads: one month row", oct.byMonth.length, 1, 0);
+    expect("Ads: month spend", oct.byMonth[0]?.spend ?? 0, 85930.48, 0.01);
+    expect("Ads: no campaign split in the summary", oct.byCampaign.length, 0, 0);
+    const split = fcAdsInPeriod([
+      { grain: "day", period_date: "2026-11-02", product_id: "P1", campaign: "C1", spend: 60, impressions: 1000, clicks: 10, ad_sales: 240, orders: 2 },
+      { grain: "day", period_date: "2026-11-02", product_id: "P2", campaign: "C1", spend: 40, impressions: 500, clicks: 5, ad_sales: 80, orders: 1 },
+      { grain: "day", period_date: "2026-11-03", product_id: "P1", campaign: "C2", spend: 50, impressions: 800, clicks: 8, ad_sales: 100, orders: 1 },
+    ], "2026-11-01", "2026-11-30");
+    expect("Ads: campaigns", split.byCampaign.length, 2, 0);
+    expect("Ads: top campaign spend", split.byCampaign[0]?.spend ?? 0, 100, 0);
+    expect("Ads: product P1 spend", split.byProductDetail.find((x) => x.key === "P1")?.spend ?? 0, 110, 0);
   }
 
   console.log(failures ? `\n${failures} check(s) failed` : "\nAll FirstCry parser checks passed");
