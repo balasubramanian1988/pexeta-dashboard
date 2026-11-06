@@ -30,6 +30,13 @@ const CONFLICT: Record<string, string> = {
   sd_my_returns: "account_id,row_key",
   sd_my_invoices: "account_id,number",
   sd_my_ads_styles: "account_id,row_key",
+  sd_fk_orders: "account_id,order_item_id",
+  sd_fk_sales: "account_id,row_key",
+  sd_fk_settlement: "account_id,row_key",
+  sd_fk_settlement_other: "account_id,row_key",
+  sd_fk_returns: "account_id,return_id",
+  sd_fk_ads: "account_id,row_key",
+  sd_fk_invoices: "account_id,number",
 };
 // Same rule for Myntra: a pending ("unsettled") download never wipes a payout recorded by a settled one.
 const KEEP: Record<string, { key: string; text: string[]; nums: string[] }> = {
@@ -41,7 +48,7 @@ const KEEP: Record<string, { key: string; text: string[]; nums: string[] }> = {
 // An older or narrower file must not wipe what a newer one recorded, so blanks never overwrite values.
 const SNAPSHOT = new Set(["sd_inventory", "sd_listings"]);
 // Reports whose SKU → ASIN pairs and fulfilment channel are authoritative.
-const SKU_SOURCE = new Set(["listings", "orders", "fba_inventory", "fc_products", "my_styles"]);
+const SKU_SOURCE = new Set(["listings", "orders", "fba_inventory", "fc_products", "my_styles", "fk_orders"]);
 const CHUNK = 500;
 
 async function chunked(rows: DbRow[], fn: (part: DbRow[]) => PromiseLike<{ error: { message: string } | null }>) {
@@ -146,8 +153,8 @@ export async function saveParsed(admin: SupabaseClient, accountId: string, p: Pa
     }
   }
 
-  if (p.table === "sd_my_invoices" && p.pdf && rows[0]) {
-    const path = `${accountId}/myntra-invoices/${String(rows[0].number).replace(/[^A-Za-z0-9-]/g, "_")}.pdf`;
+  if ((p.table === "sd_my_invoices" || p.table === "sd_fk_invoices") && p.pdf && rows[0]) {
+    const path = `${accountId}/${p.table === "sd_fk_invoices" ? "flipkart" : "myntra"}-invoices/${String(rows[0].number).replace(/[^A-Za-z0-9-]/g, "_")}.pdf`;
     const { error } = await admin.storage.from("sd-files").upload(path, p.pdf, { contentType: "application/pdf", upsert: true });
     if (error) throw new Error(`Could not store the PDF: ${error.message}`);
     rows[0].storage_path = path;

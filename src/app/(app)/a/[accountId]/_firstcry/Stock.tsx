@@ -1,6 +1,6 @@
 import SettingForm from "@/components/SettingForm";
 import { Kpi, Section, StatusPill } from "@/components/ui";
-import { getFcStock, getMyStock } from "@/lib/data";
+import { getFcStock, getFkStock, getMyStock } from "@/lib/data";
 import { FC_STOCK_LABEL } from "@/lib/engine/firstcry";
 import { count } from "@/lib/format";
 import { FcHeader, FcNoData, type FcPageProps } from "./common";
@@ -8,14 +8,14 @@ import { FcHeader, FcNoData, type FcPageProps } from "./common";
 const TONE = { urgent: "red", make: "amber", enough: "green", no_sales: "grey", count_needed: "blue" } as const;
 
 export default async function FcStock({ account, period, team, canEdit }: FcPageProps) {
-  const rows = await (account.marketplace === "Myntra" ? getMyStock : getFcStock)(account, period.from, period.to, period.days);
+  const rows = await (account.marketplace === "Myntra" ? getMyStock : account.marketplace === "Flipkart" ? getFkStock : getFcStock)(account, period.from, period.to, period.days);
   const cover = account.plan_horizon_days + account.default_lead_time_days + account.default_safety_days;
   const needed = rows.reduce((s, r) => s + Math.ceil(r.needed), 0);
   return (
     <>
       <FcHeader account={account} period={period} title={`${account.plan_horizon_days}-day stock plan`} slug="stock"
         sub={<>{account.marketplace} orders ship from your own warehouse, so this plan is built from demand: daily sales rate × ({account.plan_horizon_days} days + lead time + {account.default_safety_days} safety days), {cover} days at the default lead time. Enter your warehouse stock to see how many to make.</>} />
-      {!rows.length ? <FcNoData accountId={account.id} team={team} /> : (
+      {!rows.length ? <FcNoData accountId={account.id} team={team} marketplace={account.marketplace} /> : (
         <>
           <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
             <Kpi label="Units to keep ready" value={count(needed)} sub="all products" />

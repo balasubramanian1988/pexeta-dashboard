@@ -51,6 +51,17 @@ const MYNTRA_CHECKLIST: { type: ReportType; when: string; where: string }[] = [
   { type: "my_styles", when: "Monthly, and when styles change", where: "Style dashboard export (XLSX). Links Myntra style IDs to your SKUs, so every style's ads reach the right product." },
 ];
 
+// Flipkart Seller Hub and Flipkart Ads downloads (Nov 2026). Overlapping dates are fine: rows are keyed, so nothing double counts.
+const FLIPKART_CHECKLIST: { type: ReportType; when: string; where: string }[] = [
+  { type: "fk_orders", when: "Daily", where: "Seller Hub › Reports › Orders report, last 7 days (XLSX). Orders, status, SKU, dispatch and delivery dates." },
+  { type: "fk_sales", when: "Weekly", where: "Seller Hub › Reports › Tax reports › Sales report, month to date (XLSX). Customer invoice values and GST rates; net sales come from here." },
+  { type: "fk_settlement", when: "Weekly", where: "Seller Hub › Payments › Settlements › Settlement report, month to date (XLSX, all sheets). Payout per order, offers, fees, TCS and TDS; its Ads sheet brings the ads wallet top-ups." },
+  { type: "fk_returns", when: "Weekly", where: "Seller Hub › Returns › download, last 30 days (XLSX). Courier returns (RTO) and customer returns, with reasons." },
+  { type: "fk_ads_daily", when: "Weekly", where: "Flipkart Ads › Reports › Campaign report, day-wise, month to date (CSV). Gives spend by day and campaign." },
+  { type: "fk_ads_products", when: "Monthly, after the month ends", where: "Flipkart Ads › Reports › Product (FSN) report for the whole month (CSV). Splits the month's spend by product. Keep the Start Time / End Time lines at the top of the file." },
+  { type: "fk_invoice", when: "Monthly", where: "Seller Hub › Payments › Invoices: the commission / tax invoice and any credit notes (PDF or ZIP). For GST credit; fees are already counted from the settlement report." },
+];
+
 export default async function UploadsPage({ params }: { params: Promise<{ accountId: string }> }) {
   await requireTeam();
   const { accountId } = await params;
@@ -63,18 +74,19 @@ export default async function UploadsPage({ params }: { params: Promise<{ accoun
   const yesterday = addDays(todayIst(), -1);
   const fc = account.marketplace === "FirstCry";
   const my = account.marketplace === "Myntra";
+  const fk = account.marketplace === "Flipkart";
 
   return (
     <>
       <PageHeader eyebrow={`${account.client_name} · ${account.marketplace}`} title="Upload reports" sub={`Seller ID ${account.seller_id || "not set"}. Re-uploading a report, or one that overlaps an earlier one, updates the data without double counting.`} />
       <Section title="Upload"><Uploader accountId={account.id} defaultDate={yesterday} marketplace={account.marketplace} /></Section>
 
-      <Section title="What to upload" sub={fc ? "Download from the FirstCry vendor panel. Upload the files exactly as downloaded (XLSX)." : my ? "Download from the Myntra Partner Portal. Upload the files exactly as downloaded: do not open and re-save CSVs in Excel, which turns order IDs into numbers like 1.00366E+11." : "Download from Seller Central with this account selected."}>
+      <Section title="What to upload" sub={fc ? "Download from the FirstCry vendor panel. Upload the files exactly as downloaded (XLSX)." : my ? "Download from the Myntra Partner Portal. Upload the files exactly as downloaded: do not open and re-save CSVs in Excel, which turns order IDs into numbers like 1.00366E+11." : fk ? "Download from Flipkart Seller Hub and Flipkart Ads. Upload the files exactly as downloaded; a ZIP of invoices is fine. The listing file (.xls) is not needed." : "Download from Seller Central with this account selected."}>
         <div className="overflow-x-auto">
           <table className="tbl">
-            <thead><tr><th>Report</th><th>How often</th><th>{fc || my ? "What to download" : "Where in Seller Central"}</th><th>Data up to</th></tr></thead>
+            <thead><tr><th>Report</th><th>How often</th><th>{fc || my || fk ? "What to download" : "Where in Seller Central"}</th><th>Data up to</th></tr></thead>
             <tbody>
-              {(fc ? FIRSTCRY_CHECKLIST : my ? MYNTRA_CHECKLIST : CHECKLIST).map((c) => {
+              {(fc ? FIRSTCRY_CHECKLIST : my ? MYNTRA_CHECKLIST : fk ? FLIPKART_CHECKLIST : CHECKLIST).map((c) => {
                 const f = fresh[c.type];
                 const stale = c.when === "Daily" && (!f?.periodEnd || f.periodEnd < addDays(yesterday, -1));
                 return (

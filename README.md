@@ -1,6 +1,6 @@
 # Pexeta Seller Dashboard
 
-`dashboard.pexeta.in`: profit, revenue, ads, a 45-day stock plan and GST documents for Pexeta's marketplace sellers. Amazon.in, FirstCry and Myntra are live (pilot: Root and Soil); Flipkart and quick commerce next.
+`dashboard.pexeta.in`: profit, revenue, ads, a 45-day stock plan and GST documents for Pexeta's marketplace sellers. Amazon.in, FirstCry, Myntra and Flipkart are live (pilot: Root and Soil); quick commerce next.
 
 Each brand is opted into the marketplaces it sells on (**Brands** page); each marketplace is one account with its own tabs.
 
@@ -58,9 +58,28 @@ Customer price (MRP − seller discount) − Myntra's margin ("GT charges") = se
 
 Upload CSVs as downloaded: re-saving in Excel turns order IDs into numbers like `1.00366E+11`.
 
+## Flipkart (seller ships)
+
+Per order item the settlement report shows: sale amount (what the customer paid) + offer amount + my share (the seller's part of the offer, negative) = what the seller earns, incl. GST; minus the marketplace fee (commission, fixed, collection, shipping, return shipping…, excl. GST), TCS, TDS and GST on fees; plus the refund on a return = bank settlement value. Ads are bought through the Flipkart Ads wallet, topped up from payouts.
+
+- Sales (excl. GST) = taxable value from the Sales report, net of returns and cancellations; revenue = what the seller earns ÷ (1 + GST), so it includes offers Flipkart funds; fees = −marketplace fee.
+- Profit = revenue − fees − product cost − ads (Flipkart Ads spend, excl. GST: campaign-by-day report for totals, product report for the split by product).
+- The settlement file stores item ids as rounded numbers, so its rows are matched to orders by order id + SKU.
+- Orders not yet in a settlement report are estimated: price before discount + the seller's share of the discount, and the fee rate of the latest settled 30 days.
+
+| Report | How often | Range |
+| --- | --- | --- |
+| Seller Hub › Reports › Orders (XLSX) | Daily | Last 7 days |
+| Seller Hub › Reports › Tax reports › Sales report (XLSX) | Weekly | Month to date |
+| Seller Hub › Payments › Settlement report (XLSX, all sheets) | Weekly | Month to date |
+| Seller Hub › Returns (XLSX) | Weekly | Last 30 days |
+| Flipkart Ads › Campaign report, day-wise (CSV) | Weekly | Month to date |
+| Flipkart Ads › Product report (CSV, keep the Start/End Time lines) | Monthly | The whole month |
+| Commission / tax invoices and credit notes (PDF or ZIP) | Monthly | |
+
 ## Setup (once)
 
-1. **Supabase** (the Pexeta Ops project): SQL editor → run `supabase/schema.sql` (existing installs: run `002_brand_marketplaces.sql`, `003_firstcry.sql` and `004_myntra.sql` instead). It runs after the ops schema and is safe to run again. It creates the `sd_` tables, row-level security, the private `sd-files` bucket, and seeds Root and Soil (seller ID A20LNIW0086CNE, six GSTINs).
+1. **Supabase** (the Pexeta Ops project): SQL editor → run `supabase/schema.sql` (existing installs: run the numbered files you have not run yet, e.g. `009_flipkart.sql`). It runs after the ops schema and is safe to run again. It creates the `sd_` tables, row-level security, the private `sd-files` bucket, and seeds Root and Soil (seller ID A20LNIW0086CNE, six GSTINs).
 2. **Supabase Auth**:
    - URL configuration → add `https://dashboard.pexeta.in/auth/callback` to Redirect URLs.
    - Providers → Email: keep enabled, keep **Confirm email** on. Turn **off** "Allow new users to sign up" for email if your project allows it (seller logins are created by the team). Google stays as it is for ops.
@@ -90,6 +109,6 @@ The "Transactions for statement period" daily summaries are rejected on purpose:
 npm run test          # parsers vs independently computed totals, engine vs workbook, FirstCry parsers + engine, parser columns vs schema
 ```
 
-`test-data/` holds client files and is git-ignored. Put the Root and Soil Amazon files there, the FirstCry files in `test-data/firstcry/` and the Myntra files in `test-data/myntra/`, to run the checks.
+`test-data/` holds client files and is git-ignored. Put the Root and Soil Amazon files there, the FirstCry files in `test-data/firstcry/` the Myntra files in `test-data/myntra/` and the Flipkart files in `test-data/flipkart/`, to run the checks.
 
 **Local end-to-end** (optional): a Postgres with `supabase/test/supabase_stub.sql`, the ops schema and `supabase/schema.sql`, plus PostgREST on port 3009 with `jwt-secret = "local-e2e-secret-local-e2e-secret-0123456789"`; then `npx tsx --conditions=react-server scripts/e2e-local.ts`. It saves every test file through the real save layer, reads back as the seller with row-level security on, and checks totals, GST by GSTIN and isolation between sellers.

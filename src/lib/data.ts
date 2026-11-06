@@ -6,6 +6,7 @@ import { computeProfit } from "./engine/profit";
 import { computeStock } from "./engine/stock";
 import type { AccountDefaults, AdRow, InventoryRow, ListingRow, ProductRow, ProductSetting, SbPurchaseRow, SkuRow, TxnRow } from "./engine/types";
 import type { Account } from "./auth";
+import { computeFlipkart, fkPayouts, type FkAdRow, type FkOrderRow, type FkOtherRow, type FkRateRow, type FkReturnRow, type FkSaleRow, type FkSettlementRow } from "./engine/flipkart";
 import { computeMyntra, type MyAdStyleRow, type MyDeductionRow, type MyInvoiceRow, type MyOrderRow, type MyRateRow, type MyReturnRow, type MySettlementRow } from "./engine/myntra";
 import type { Finding, MarketSummary } from "./engine/brand";
 import { dailyNetSales } from "./engine/summaries";
@@ -148,7 +149,7 @@ export const getFcStock = cache(async (account: Account, from: string, to: strin
 
 // ---------- One brand across marketplaces ----------
 
-const SUPPORTED = new Set(["Amazon", "FirstCry", "Myntra"]);
+const SUPPORTED = new Set(["Amazon", "FirstCry", "Myntra", "Flipkart"]);
 
 async function summarise(account: Account, from: string, to: string, prevFrom: string, prevTo: string): Promise<{ s: MarketSummary; extra: Finding[] }> {
   const base = { accountId: account.id, marketplace: account.marketplace, notes: [] as string[], daily: new Map<string, number>() };
@@ -221,6 +222,29 @@ async function summarise(account: Account, from: string, to: string, prevFrom: s
       extra: [],
     };
   }
+  if (account.marketplace === "Flipkart") {
+    const [cur, prev] = await Promise.all([getFlipkart(account, from, to), getFlipkart(account, prevFrom, prevTo)]);
+    if (!cur.hasData) return { s: empty, extra: [] };
+    const t = cur.result.totals;
+    const hasAds = !!cur.result.ads;
+    return {
+      s: {
+        ...empty, hasData: true, sales: t.sales, units: t.units - t.returnUnits,
+        returnRate: t.shipped ? (t.rtoUnits + t.returnUnits) / t.shipped : null,
+        // What Flipkart keeps, net of the offers it funds.
+        fees: t.fees - t.offers, ads: hasAds ? t.ads : null, productCost: t.productCost, profit: t.profit, margin: t.margin,
+        prevSales: prev.hasData ? prev.result.totals.sales : null,
+        daily: new Map(cur.result.daily.map((d) => [d.date, d.sales])),
+        lossProducts: cur.result.rows.filter((r) => r.profit < 0).length,
+        products: cur.result.rows.map((r) => ({ code: r.sku, name: r.name, units: r.units - r.returnUnits, sales: r.sales, fees: r.fees - r.offers, ads: hasAds ? r.ads : null, productCost: r.productCost, profit: r.profit, margin: r.margin })),
+        notes: [
+          ...(t.estimatedLines ? [`${t.estimatedLines} orders estimated: not in a settlement report yet.`] : []),
+          ...(cur.result.ads?.spread ? ["Some ads days come from a monthly product report, spread evenly."] : []),
+        ],
+      },
+      extra: [],
+    };
+  }
   return { s: { ...empty, notes: ["Reports from this marketplace are not read by the dashboard yet."] }, extra: [] };
 }
 
@@ -272,6 +296,55 @@ export const getMyStock = cache(async (account: Account, from: string, to: strin
   // Demand = orders that were not cancelled before shipping.
   const units = new Map<string, number>();
   for (const o of orders) if (!(o.status === "F" && !o.shipped_on && !o.delivered_on) && o.sku) units.set(o.sku, (units.get(o.sku) ?? 0) + 1);
+  return computeFcStock({ unitsById: units, periodDays: days, products: master.products, settings: master.settings, defaults: defaultsOf(account) });
+});
+
+// ---------- Flipkart ----------
+const FK_ORDER_COLS = "order_item_id, order_id, order_date, status, sku, title, quantity, cancelled_on, cancellation_reason, return_reason, dispatched_on, delivered_on";
+const FK_SETTLE_COLS = "line_key, order_id, sku, quantity, order_date, neft_id, neft_type, payment_date, settlement_value, sale_amount, offer_amount, my_share, addons, marketplace_fee, commission, fixed_fee, collection_fee, pick_pack_fee, shipping_fee, reverse_shipping_fee, other_fees, tcs, tds, gst_on_fees, offer_adjustment, protection_fund, refund, return_type";
+const FK_SETTLE_NUM = ["quantity", "settlement_value", "sale_amount", "offer_amount", "my_share", "addons", "marketplace_fee", "commission", "fixed_fee", "collection_fee", "pick_pack_fee", "shipping_fee", "reverse_shipping_fee", "other_fees", "tcs", "tds", "gst_on_fees", "offer_adjustment", "protection_fund", "refund"];
+const FK_SALE_COLS = "order_item_id, order_id, sku, event_sub_type, order_date, quantity, price_before_discount, seller_share, invoice_amount, taxable_value, gst_rate";
+const FK_AD_COLS = "grain, period_start, period_end, campaign_id, campaign, sku, product, spend, views, clicks, units, revenue";
+
+export const getFlipkart = cache(async (account: Account, from: string, to: string) => {
+  const sb = await createClient();
+  const [orders, settlement, rates, sales, returns, ads, master] = await Promise.all([
+    fetchAll<FkOrderRow>((f, t) => sb.from("sd_fk_orders").select(FK_ORDER_COLS).eq("account_id", account.id).gte("order_date", from).lte("order_date", to).order("order_item_id").range(f, t)).then((r) => numify(r, ["quantity"])),
+    fetchAll<FkSettlementRow>((f, t) => sb.from("sd_fk_settlement").select(FK_SETTLE_COLS).eq("account_id", account.id).gte("order_date", from).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, FK_SETTLE_NUM)),
+    // Fee history for estimates: the 90 days up to the end of the period.
+    fetchAll<FkRateRow>((f, t) => sb.from("sd_fk_settlement").select("sku, order_date, sale_amount, offer_amount, my_share, marketplace_fee, reverse_shipping_fee, return_type").eq("account_id", account.id).gte("order_date", addDays(to, -89)).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["sale_amount", "offer_amount", "my_share", "marketplace_fee", "reverse_shipping_fee"])),
+    fetchAll<FkSaleRow>((f, t) => sb.from("sd_fk_sales").select(FK_SALE_COLS).eq("account_id", account.id).gte("order_date", from).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["quantity", "price_before_discount", "seller_share", "invoice_amount", "taxable_value", "gst_rate"])),
+    fetchAll<FkReturnRow>((f, t) => sb.from("sd_fk_returns").select("order_item_id, return_type, status, reason, sub_reason, sku").eq("account_id", account.id).order("return_id").range(f, t)),
+    fetchAll<FkAdRow>((f, t) => sb.from("sd_fk_ads").select(FK_AD_COLS).eq("account_id", account.id).lte("period_start", to).gte("period_end", from).order("row_key").range(f, t)).then((r) => numify(r, ["spend", "views", "clicks", "units", "revenue"])),
+    getFcMaster(account.id),
+  ]);
+  const result = computeFlipkart({ orders, settlement, rates, sales, returns, ads, products: master.products, settings: master.settings, defaults: defaultsOf(account), from, to });
+  return { result, master, hasData: orders.length > 0 || settlement.length > 0, hasSales: sales.length > 0 };
+});
+
+/** Payouts made in the period (by payment date), invoices and deductions, for the Payments tab. */
+export const getFkPayments = cache(async (account: Account, from: string, to: string) => {
+  const sb = await createClient();
+  const [settlement, other, invoices] = await Promise.all([
+    fetchAll<FkSettlementRow>((f, t) => sb.from("sd_fk_settlement").select(FK_SETTLE_COLS).eq("account_id", account.id).gte("payment_date", from).lte("payment_date", to).order("row_key").range(f, t)).then((r) => numify(r, FK_SETTLE_NUM)),
+    fetchAll<FkOtherRow>((f, t) => sb.from("sd_fk_settlement_other").select("sheet, neft_id, payment_date, type, reference, amount, gst").eq("account_id", account.id).gte("payment_date", from).lte("payment_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["amount", "gst"])),
+    fetchAll<{ number: string; doc_type: string; invoice_date: string; original_number: string; ads: number; commission: number; fixed_fee: number; shipping: number; other: number; base_amount: number; gst: number; total: number }>((f, t) => sb.from("sd_fk_invoices").select("number, doc_type, invoice_date, original_number, ads, commission, fixed_fee, shipping, other, base_amount, gst, total").eq("account_id", account.id).order("invoice_date", { ascending: false }).range(f, t))
+      .then((r) => numify(r, ["ads", "commission", "fixed_fee", "shipping", "other", "base_amount", "gst", "total"])),
+  ]);
+  const bySheet = new Map<string, number>();
+  for (const o of other) bySheet.set(o.sheet, (bySheet.get(o.sheet) ?? 0) + o.amount);
+  return { payouts: fkPayouts(settlement, other), deductions: [...bySheet.entries()].map(([sheet, amount]) => ({ sheet, amount })), invoices };
+});
+
+export const getFkStock = cache(async (account: Account, from: string, to: string, days: number) => {
+  const sb = await createClient();
+  const [orders, master] = await Promise.all([
+    fetchAll<FkOrderRow>((f, t) => sb.from("sd_fk_orders").select(FK_ORDER_COLS).eq("account_id", account.id).gte("order_date", from).lte("order_date", to).order("order_item_id").range(f, t)).then((r) => numify(r, ["quantity"])),
+    getFcMaster(account.id),
+  ]);
+  // Demand = orders that were not cancelled before shipping.
+  const units = new Map<string, number>();
+  for (const o of orders) if (!(o.status === "CANCELLED" && !o.dispatched_on && !o.delivered_on) && o.sku) units.set(o.sku, (units.get(o.sku) ?? 0) + (o.quantity || 1));
   return computeFcStock({ unitsById: units, periodDays: days, products: master.products, settings: master.settings, defaults: defaultsOf(account) });
 });
 
@@ -327,6 +400,12 @@ export const getReturns = cache(async (accounts: Account[], from: string, to: st
     } else if (a.marketplace === "Myntra") {
       const rows = await fetchAll<{ status: string; sku: string; quantity: number; return_reason: string; return_created_date: string | null; rto_date: string | null }>((f, t) => sb.from("sd_my_returns").select("status, sku, quantity, return_reason, return_created_date, rto_date").eq("account_id", a.id).or(`and(return_created_date.gte.${from},return_created_date.lte.${to}),and(rto_date.gte.${from},rto_date.lte.${to})`).order("row_key").range(f, t));
       for (const r of rows) lines.push({ marketplace: "Myntra", date: (r.rto_date || r.return_created_date)!, product: r.sku, name: name(r.sku), quantity: Number(r.quantity) || 1, reason: r.status === "RTO" ? "RTO" : r.return_reason, detail: r.status, comment: "" });
+    } else if (a.marketplace === "Flipkart") {
+      const rows = await fetchAll<{ return_type: string; status: string; sku: string; quantity: number; reason: string; sub_reason: string; approved_on: string | null; requested_on: string | null }>((f, t) => sb.from("sd_fk_returns").select("return_type, status, sku, quantity, reason, sub_reason, approved_on, requested_on").eq("account_id", a.id).neq("status", "cancelled").gte("approved_on", from).lte("approved_on", to).order("return_id").range(f, t));
+      for (const r of rows) {
+        const rto = r.return_type === "courier_return";
+        lines.push({ marketplace: "Flipkart", date: (r.approved_on || r.requested_on)!, product: r.sku, name: name(r.sku), quantity: Number(r.quantity) || 1, reason: rto ? "RTO" : r.reason.replace(/_/g, " "), detail: rto ? `Returned to origin: ${r.reason.replace(/_/g, " ")}` : r.sub_reason.replace(/_/g, " "), comment: "" });
+      }
     }
   }));
   return computeReturns(lines);

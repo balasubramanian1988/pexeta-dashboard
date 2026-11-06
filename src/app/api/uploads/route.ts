@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     }
     // Never save one marketplace's report into another marketplace's account.
     const belongs = reportMarketplace(r.type);
-    if (["Amazon", "FirstCry", "Myntra"].includes(account.marketplace) && belongs !== account.marketplace) {
+    if (["Amazon", "FirstCry", "Myntra", "Flipkart"].includes(account.marketplace) && belongs !== account.marketplace) {
       const reason = `This is a ${belongs} report, but this is the ${account.marketplace} account. Upload it to ${account.client_name}'s ${belongs} account instead.`;
       await admin.from("sd_uploads").insert({ account_id: account.id, report_type: r.type, file_name: r.fileName, storage_path: body.path, status: "failed", message: reason, uploaded_by: viewer.memberId });
       outcomes.push({ fileName: r.fileName, ok: false, label: REPORT_LABEL[r.type], rows: 0, message: reason, period: "" });

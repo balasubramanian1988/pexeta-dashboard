@@ -8,6 +8,7 @@ import { getPeriod } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
 import FcOrders from "../_firstcry/Orders";
 import MyOrders from "../_myntra/Orders";
+import FkOrders from "../_flipkart/Orders";
 
 export const metadata = { title: "Revenue" };
 
@@ -17,6 +18,7 @@ export default async function RevenuePage({ params, searchParams }: { params: Pr
   const { accountId } = await params;
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
   const period = await getPeriod(account.id, await searchParams);
+  if (account.marketplace === "Flipkart") return <FkOrders account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   if (account.marketplace === "Myntra") return <MyOrders account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   if (account.marketplace === "FirstCry") return <FcOrders account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   const sb = await createClient();

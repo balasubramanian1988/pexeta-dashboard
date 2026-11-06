@@ -4,13 +4,15 @@ import ExcelJS from "exceljs";
 import { unzipSync } from "fflate";
 import type { Cell, Row } from "./util";
 
-export type Table = { headers: string[]; rows: Row[] };
+/** meta: "Key, value" lines above the header (Flipkart Ads CSVs start with "Start Time, 2026-10-01 00:00:00"). */
+export type Table = { headers: string[]; rows: Row[]; meta?: Record<string, string> };
 export type ReadFile =
   | { kind: "table"; fileName: string; table: Table }
-  | { kind: "pdf"; fileName: string; text: string; data: Uint8Array };
+  | { kind: "pdf"; fileName: string; text: string; data: Uint8Array }
+  | { kind: "unsupported"; fileName: string; reason: string };
 
 const KNOWN_HEADER_STARTS = ["date/time", "amazon-order-id", "item-name", "sku", "(parent) asin", "date", "return-date",
-  "seller gstin", "gstin of receiver", "invoice number", "search query", "asin title", "product title", "approval-date"];
+  "seller gstin", "gstin of receiver", "invoice number", "search query", "asin title", "product title", "approval-date", "campaign id"];
 
 /** Some Amazon CSVs start with explanation lines; find the real header row. */
 function findHeaderLine(lines: string[]): number {
@@ -27,6 +29,8 @@ function readDelimited(text: string): Table {
   const lines = clean.split(/\r?\n/);
   const start = findHeaderLine(lines);
   const body = lines.slice(start).join("\n");
+  const meta: Record<string, string> = {};
+  for (const l of lines.slice(0, start)) { const m = l.match(/^\s*"?([^",]+)"?\s*,\s*"?([^"]*)"?\s*$/); if (m) meta[m[1].trim().toLowerCase()] = m[2].trim(); }
   const tab = (lines[start] ?? "").split("\t").length > (lines[start] ?? "").split(",").length;
   const parsed = Papa.parse<Record<string, string>>(body, {
     header: true,
@@ -35,12 +39,14 @@ function readDelimited(text: string): Table {
     transformHeader: (h) => h.replace(/^﻿/, "").trim(),
   });
   const headers = (parsed.meta.fields ?? []).map((h) => h.trim());
-  return { headers, rows: parsed.data as Row[] };
+  return { headers, rows: parsed.data as Row[], ...(Object.keys(meta).length ? { meta } : {}) };
 }
 
 /** Values of one worksheet row, with formulas and rich text flattened. exceljs rows are 1-based. */
 function cells(row: ExcelJS.Row): unknown[] {
-  return (row.values as unknown[]).slice(1).map((v) => {
+  // Array.from turns the holes exceljs leaves for blank cells into undefined, so a blank header cell keeps its
+  // column (Flipkart's settlement sheets have one); with holes, later headers would shift left by one.
+  return Array.from(row.values as unknown[]).slice(1).map((v) => {
     if (v && typeof v === "object" && !(v instanceof Date)) {
       const o = v as { result?: unknown; text?: unknown; richText?: { text: string }[] };
       return o.result ?? o.text ?? (o.richText ? o.richText.map((t) => t.text).join("") : "");
@@ -117,6 +123,7 @@ export async function readUpload(fileName: string, data: Uint8Array): Promise<Re
     }
     return out;
   }
+  if (lower.endsWith(".xls")) return [{ kind: "unsupported", fileName, reason: "Old Excel format (.xls). Open it in Excel and save as .xlsx, then upload again. (Flipkart's listing file is not needed: stock comes from Product costs.)" }];
   if (lower.endsWith(".pdf")) { const copy = data.slice(); return [{ kind: "pdf", fileName, text: await readPdf(data), data: copy }]; }
   if (lower.endsWith(".xlsx")) {
     const sheets = await readXlsx(data);

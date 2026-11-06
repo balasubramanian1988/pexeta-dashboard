@@ -11,13 +11,14 @@
     "test:engine": "tsx scripts/test-engine.ts",
     "test:firstcry": "tsx scripts/test-firstcry.ts",
     "test:myntra": "tsx scripts/test-myntra.ts",
+    "test:flipkart": "tsx scripts/test-flipkart.ts",
     "test:report": "tsx scripts/test-report.ts",
     "test:search": "tsx scripts/test-search.ts",
     "test:returns": "tsx scripts/test-returns.ts",
     "test:returns-money": "tsx scripts/test-returns-money.ts",
     "test:fba-claims": "tsx scripts/test-fba-claims.ts",
     "check:columns": "tsx scripts/check-columns.ts",
-    "test": "npm run test:parsers && npm run test:engine && npm run test:firstcry && npm run test:myntra && npm run test:report && npm run test:search && npm run test:returns && npm run test:returns-money && npm run test:fba-claims && npm run check:columns"
+    "test": "npm run test:parsers && npm run test:engine && npm run test:firstcry && npm run test:myntra && npm run test:flipkart && npm run test:report && npm run test:search && npm run test:returns && npm run test:returns-money && npm run test:fba-claims && npm run check:columns"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

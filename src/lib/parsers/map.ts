@@ -4,6 +4,7 @@ import type { Table } from "./read";
 import { baAsins, baBasket, baQueries } from "./brandAnalytics";
 import { invLedger, reimbursements } from "./fbaClaims";
 import { fcAds, fcProducts, fcRecon, fcReturns, fcSales } from "./firstcry";
+import { fkAdsDaily, fkAdsProducts, fkOrders, fkReturns, fkSales, fkSettlement } from "./flipkart";
 import { myAdsStyles, myDeductions, myOrders, myReturns, mySettlement, myStyles } from "./myntra";
 import {
   calendarDate, istDate, istMonth, num, parseTimestamp, parseUnifiedDate, parseUsDate, pct, rowHasher, shortName, str, type Row,
@@ -464,6 +465,14 @@ export function mapTable(type: ReportType, t: Table, ctx: Ctx): Parsed {
     case "my_invoice": throw new Error("PDFs are mapped with myInvoice()");
     case "my_ads_styles": return myAdsStyles(t);
     case "my_styles": return myStyles(t);
+    case "fk_orders": return fkOrders(t);
+    case "fk_returns": return fkReturns(t);
+    case "fk_sales": return fkSales(t);
+    case "fk_settlement": return fkSettlement(t);
+    case "fk_settlement_other": throw new Error("Settlement side sheets are mapped with fkSettlementOther()");
+    case "fk_ads_daily": return fkAdsDaily(t);
+    case "fk_ads_products": return fkAdsProducts(t);
+    case "fk_invoice": throw new Error("PDFs are mapped with fkInvoice()");
   }
 }
 

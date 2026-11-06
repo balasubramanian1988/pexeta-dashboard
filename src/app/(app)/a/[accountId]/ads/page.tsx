@@ -7,6 +7,7 @@ import { compactRupees, count, percent, rupees } from "@/lib/format";
 import { getPeriod } from "@/lib/period";
 import { notFound } from "next/navigation";
 import FcAds from "../_firstcry/Ads";
+import FkAds from "../_flipkart/Ads";
 
 export const metadata = { title: "Ads" };
 
@@ -17,6 +18,7 @@ export default async function AdsPage({ params, searchParams }: { params: Promis
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
   if (account.marketplace === "Myntra") notFound(); // Myntra ads come on monthly invoices, shown in profit
   const period = await getPeriod(account.id, await searchParams);
+  if (account.marketplace === "Flipkart") return <FkAds account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   if (account.marketplace === "FirstCry") return <FcAds account={account} period={period} team={viewer.kind === "team"} canEdit={viewer.canEditCosts} />;
   const { result, ads, sbPurchases } = await getProfit(account, period.from, period.to);
   const t = result.totals;

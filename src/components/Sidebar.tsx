@@ -8,13 +8,13 @@ import Logo from "./Logo";
 
 type Props = { name: string; team: boolean; accounts: { id: string; name: string; marketplace: string; client_id: string; client_name: string }[] };
 
-// FirstCry and Myntra (dropship marketplaces) share one set of tabs; Amazon has its own.
+// FirstCry, Myntra and Flipkart (seller-shipped marketplaces) share one set of tabs; Amazon has its own.
 const DROPSHIP_TABS = [
   { slug: "", label: "Overview", icon: Gauge },
   { slug: "profit", label: "Profitability", icon: BadgeIndianRupee },
   { slug: "revenue", label: "Orders & returns", icon: BarChart3 },
   { slug: "payments", label: "Payments", icon: Wallet },
-  { slug: "ads", label: "Ads", icon: Megaphone, only: "FirstCry" },
+  { slug: "ads", label: "Ads", icon: Megaphone, only: ["FirstCry", "Flipkart"] },
   { slug: "stock", label: "45-day stock plan", icon: Boxes },
   { slug: "costs", label: "Product costs", icon: Tags },
 ];
@@ -70,7 +70,7 @@ export default function Sidebar({ name, team, accounts }: Props) {
                 {item(`/a/${a.id}${range}`, a.marketplace || a.name, Store, a.id === account?.id && path === `/a/${a.id}`)}
                 {a.id === account?.id && (
                   <div className="ml-5 space-y-0.5 border-l border-white/10 pl-2">
-                    {(a.marketplace === "FirstCry" || a.marketplace === "Myntra" ? DROPSHIP_TABS : TABS).filter((t) => t.slug && (!("only" in t) || t.only === a.marketplace)).map((t) => {
+                    {(["FirstCry", "Myntra", "Flipkart"].includes(a.marketplace) ? DROPSHIP_TABS : TABS).filter((t) => t.slug && (!("only" in t) || (t.only as string[]).includes(a.marketplace))).map((t) => {
                       const href = `/a/${a.id}/${t.slug}`;
                       return item(`${href}${t.slug === "costs" || t.slug === "gst" || t.slug === "search" ? "" : range}`, t.label, t.icon, path.startsWith(href));
                     })}

@@ -11,15 +11,16 @@ export function todayIst() {
   return new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-/** Latest day with sales data: Amazon settled transactions, FirstCry or Myntra orders. */
+/** Latest day with sales data: Amazon settled transactions, FirstCry, Myntra or Flipkart orders. */
 export async function latestDataDate(accountId: string): Promise<string | null> {
   const supabase = await createClient();
-  const [amz, fc, my] = await Promise.all([
+  const [amz, fc, my, fk] = await Promise.all([
     supabase.from("sd_transactions").select("posted_date").eq("account_id", accountId).order("posted_date", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("sd_fc_sales").select("order_date").eq("account_id", accountId).order("order_date", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("sd_my_orders").select("order_date").eq("account_id", accountId).order("order_date", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("sd_fk_orders").select("order_date").eq("account_id", accountId).order("order_date", { ascending: false }).limit(1).maybeSingle(),
   ]);
-  const dates = [amz.data?.posted_date as string | undefined, fc.data?.order_date as string | undefined, my.data?.order_date as string | undefined].filter(Boolean) as string[];
+  const dates = [amz.data?.posted_date as string | undefined, fc.data?.order_date as string | undefined, my.data?.order_date as string | undefined, fk.data?.order_date as string | undefined].filter(Boolean) as string[];
   return dates.sort().pop() ?? null;
 }
 
@@ -60,11 +61,12 @@ export async function getBrandPeriod(accountIds: string[], sp: { from?: string; 
 /** Earliest day with sales data, so a "vs previous period" comparison is only made when that period is fully covered. */
 export async function earliestDataDate(accountId: string): Promise<string | null> {
   const supabase = await createClient();
-  const [amz, fc, my] = await Promise.all([
+  const [amz, fc, my, fk] = await Promise.all([
     supabase.from("sd_transactions").select("posted_date").eq("account_id", accountId).order("posted_date", { ascending: true }).limit(1).maybeSingle(),
     supabase.from("sd_fc_sales").select("order_date").eq("account_id", accountId).order("order_date", { ascending: true }).limit(1).maybeSingle(),
     supabase.from("sd_my_orders").select("order_date").eq("account_id", accountId).order("order_date", { ascending: true }).limit(1).maybeSingle(),
+    supabase.from("sd_fk_orders").select("order_date").eq("account_id", accountId).order("order_date", { ascending: true }).limit(1).maybeSingle(),
   ]);
-  const dates = [amz.data?.posted_date as string | undefined, fc.data?.order_date as string | undefined, my.data?.order_date as string | undefined].filter(Boolean) as string[];
+  const dates = [amz.data?.posted_date as string | undefined, fc.data?.order_date as string | undefined, my.data?.order_date as string | undefined, fk.data?.order_date as string | undefined].filter(Boolean) as string[];
   return dates.sort()[0] ?? null;
 }

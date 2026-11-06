@@ -1,4 +1,4 @@
-// Recognises which marketplace report a file is from its column headers (Amazon, FirstCry).
+// Recognises which marketplace report a file is from its column headers (Amazon, FirstCry, Myntra, Flipkart).
 
 export type ReportType =
   | "orders"
@@ -31,7 +31,15 @@ export type ReportType =
   | "my_returns"
   | "my_invoice"
   | "my_ads_styles"
-  | "my_styles";
+  | "my_styles"
+  | "fk_orders"
+  | "fk_returns"
+  | "fk_sales"
+  | "fk_settlement"
+  | "fk_settlement_other"
+  | "fk_ads_daily"
+  | "fk_ads_products"
+  | "fk_invoice";
 
 export const REPORT_LABEL: Record<ReportType, string> = {
   orders: "All Orders",
@@ -65,21 +73,43 @@ export const REPORT_LABEL: Record<ReportType, string> = {
   my_invoice: "Myntra tax invoice (ads, commission, logistics)",
   my_ads_styles: "Myntra: Ads by style",
   my_styles: "Myntra: Style dashboard (product list)",
+  fk_orders: "Flipkart: Orders report",
+  fk_returns: "Flipkart: Returns report",
+  fk_sales: "Flipkart: Sales report (tax)",
+  fk_settlement: "Flipkart: Settlement report (orders)",
+  fk_settlement_other: "Flipkart: Settlement report (ads and other deductions)",
+  fk_ads_daily: "Flipkart Ads: campaigns by day",
+  fk_ads_products: "Flipkart Ads: by product",
+  fk_invoice: "Flipkart commission / tax invoice",
 };
 
 export const AMAZON_REPORTS: ReportType[] = ["unified_transactions", "orders", "business_child", "fba_inventory", "listings", "sp_advertised", "sd_advertised", "sb_keyword", "sb_purchases", "returns", "mtr_b2c", "mtr_b2b", "stock_transfer", "tax_document", "ba_sqp", "ba_scp", "ba_basket", "inv_ledger", "reimbursements"];
 export const FIRSTCRY_REPORTS: ReportType[] = ["fc_sales", "fc_recon", "fc_returns", "fc_products", "fc_ads"];
 export const MYNTRA_REPORTS: ReportType[] = ["my_orders", "my_settlement", "my_deductions", "my_returns", "my_invoice", "my_ads_styles", "my_styles"];
+export const FLIPKART_REPORTS: ReportType[] = ["fk_orders", "fk_returns", "fk_sales", "fk_settlement", "fk_settlement_other", "fk_ads_daily", "fk_ads_products", "fk_invoice"];
 
 /** Which marketplace a report belongs to, so an Amazon file is never saved into a FirstCry account (or the other way round). */
-export function reportMarketplace(t: ReportType): "Amazon" | "FirstCry" | "Myntra" {
-  return FIRSTCRY_REPORTS.includes(t) ? "FirstCry" : MYNTRA_REPORTS.includes(t) ? "Myntra" : "Amazon";
+export function reportMarketplace(t: ReportType): "Amazon" | "FirstCry" | "Myntra" | "Flipkart" {
+  return FIRSTCRY_REPORTS.includes(t) ? "FirstCry" : MYNTRA_REPORTS.includes(t) ? "Myntra" : FLIPKART_REPORTS.includes(t) ? "Flipkart" : "Amazon";
 }
 
 /** Snapshot reports with no date column need a report date from the uploader. */
 export const NEEDS_REPORT_DATE: ReportType[] = ["business_child", "fba_inventory", "listings"];
 
-export type Detection = { type: ReportType } | { type: null; reason: string };
+/** skip: a sheet that is part of a recognised workbook but carries no data the dashboard uses (help, summary). */
+export type Detection = { type: ReportType } | { type: null; reason: string; skip?: boolean };
+
+/** Sheets of a multi-sheet workbook that hold no rows to save. */
+export function detectSheet(sheet: string, headers: string[]): Detection | null {
+  const name = sheet.trim().toLowerCase();
+  const h = new Set(headers.map((x) => x.split("\n")[0].trim().toLowerCase()));
+  if (/^(help|report help|summary of report|dropdown|glossary)$/.test(name)) return { type: null, reason: "Help or summary sheet.", skip: true };
+  if (name === "gst_details" && h.has("fee name")) return { type: null, reason: "Fee-wise GST detail of the settlement: already in the Orders sheet.", skip: true };
+  // Flipkart settlement sheets besides Orders: Ads, MP Fee Rebate, SPF, storage and recall, fines, services, TCS recovery…
+  // (the Orders sheet has "Bank Settlement Value" instead).
+  if (h.has("neft id") && h.has("payment date") && [...h].some((x) => x.startsWith("settlement value"))) return { type: "fk_settlement_other" };
+  return null;
+}
 
 export function detectTable(headers: string[]): Detection {
   const h = new Set(headers.map((x) => x.trim().toLowerCase()));
@@ -96,6 +126,16 @@ export function detectTable(headers: string[]): Detection {
     return { type: null, reason: "Myntra inventory report: not used. Its counts are listed quantities, not a stock count." };
   if (has("customer_paid_amount", "commission_pct_incl_gst", "invoice_number") || has("sale_order_code", "taxable_amount", "invoice_number"))
     return { type: null, reason: "Myntra GST report: not needed for the dashboard yet (it will feed a Myntra GST tab later)." };
+
+  // Flipkart (Seller Hub, Flipkart Ads)
+  if (has("order_item_id", "order_id", "fulfilment_type", "order_item_status", "sku", "fsn")) return { type: "fk_orders" };
+  if (has("return_id", "order_item_id", "return_type", "return_reason")) return { type: "fk_returns" };
+  if (has("seller gstin", "order item id", "event sub type", "fsn")) return { type: "fk_sales" };
+  if (headers.some((x) => /^bank settlement value/i.test(x.trim())) && has("order item id", "neft id")) return { type: "fk_settlement" };
+  if (has("campaign id", "campaign name", "date", "ad spend", "total converted units")) return { type: "fk_ads_daily" };
+  if (has("campaign id", "adgroup id", "sku id", "ad spend", "direct units sold")) return { type: "fk_ads_products" };
+  if (has("seller gstin", "order item id", "document type", "credit note id/ debit note id"))
+    return { type: null, reason: "Flipkart cash back report: not used by the dashboard.", skip: true };
 
   // FirstCry
   if (has("poitem ids", "base cost", "payment advice no")) return { type: "fc_recon" };
@@ -138,8 +178,11 @@ export function detectTable(headers: string[]): Detection {
 }
 
 export function detectPdf(text: string): Detection {
+  if (/Flipkart Internet Private Limited/i.test(text) && /(Commission\/Tax Invoice|CREDIT NOTE)/i.test(text)) return { type: "fk_invoice" };
+  if (/TDS Details for/i.test(text) && /194C/.test(text))
+    return { type: null, reason: "Flipkart TDS details: not needed (TDS is already in the settlement report)." };
   if (/MYNTRA DESIGNS/i.test(text) && /Tax Invoice/i.test(text) && /Invoice No\s*:/i.test(text)) return { type: "my_invoice" };
   if (/Amazon Seller Services/i.test(text) && /(Tax Invoice|Credit Note)/i.test(text) && /Total Invoice amount/i.test(text))
     return { type: "tax_document" };
-  return { type: null, reason: "PDF is not an Amazon or Myntra tax invoice." };
+  return { type: null, reason: "PDF is not an Amazon, Myntra or Flipkart tax invoice." };
 }
