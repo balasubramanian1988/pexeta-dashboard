@@ -40,6 +40,12 @@ async function main() {
   expect("Orders report rows (Sep 974 + Oct 550)", of("fk_orders").length, 1524, 0);
   expect("Returns report rows (Sep 105 + Oct 44)", of("fk_returns").length, 149, 0);
   expect("Sales report rows (1101 + 613)", of("fk_sales").length, 1714, 0);
+  // GST fields of the Sales report (October events): totals as Flipkart reports them.
+  const oct = of("fk_sales").filter((r) => String(r.invoice_date).startsWith("2026-10"));
+  expect("Sales Oct: taxable value, net of returns and cancellations", sum(oct, "taxable_value"), 132380.25, 0.05);
+  expect("Sales Oct: IGST + CGST + SGST", sum(oct, "igst") + sum(oct, "cgst") + sum(oct, "sgst"), 11379.85, 0.05);
+  expect("Sales: rows with a buyer GSTIN (Flipkart writes NA for none)", of("fk_sales").filter((r) => r.buyer_gstin).length, 0, 0);
+  expect("Sales: rows without the seller GSTIN", of("fk_sales").filter((r) => r.seller_gstin !== "33AALCR8246B1ZF").length, 0, 0);
   const inv = of("fk_invoice");
   expect("Invoices: Sep ads fee (invoice FKRKA27001370475)", sum(inv.filter((r) => r.number === "FKRKA27001370475"), "ads"), 45422.99, 0.01);
   expect("Invoices: Sep commission", sum(inv.filter((r) => r.number === "FKRKA27001370475"), "commission"), 14710.26, 0.01);

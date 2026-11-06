@@ -38,10 +38,13 @@ export type ReturnsMoney = {
   } | null;
   firstcry: { debited: number; rtoDebited: number; returnDebited: number; units: number } | null;
   myntra: { deducted: number; reverseLogistics: number; lines: number } | null;
+  // Flipkart settlement rows with a return, paid out in the period: the sale taken back (RTO and customer returns),
+  // return shipping incl. GST, and Seller Protection Fund (SPF) payments for damaged or lost returns.
+  flipkart?: { reversed: number; rtoReversed: number; returnReversed: number; rtoUnits: number; returnUnits: number; returnShipping: number; protection: number } | null;
   warehouse?: WarehouseClaims | null;  // stock lost or damaged in Amazon's warehouses (Inventory Ledger), added by the data layer
   total: {
-    reversed: number;     // sales taken back: Amazon refunds, FirstCry debit notes, Myntra reverse settlements
-    lost: number;         // money that does not come back: fees Amazon kept, Myntra return shipping, stock written off
+    reversed: number;     // sales taken back: Amazon refunds, FirstCry debit notes, Myntra and Flipkart reversals
+    lost: number;         // money that does not come back: fees Amazon kept, Myntra and Flipkart return shipping, stock written off
     recoverable: number;  // estimated claims from Amazon, due now and pending
   };
 };
@@ -63,6 +66,7 @@ export function computeReturnsMoney(args: {
   asOf: string;                          // latest data date
   fc: { rto_total: number; sr_total: number; rto_qty: number; sr_qty: number }[] | null;
   myReverse: { expected_settled: number; logistics: number }[] | null;
+  fkReturns?: { return_type: string; refund: number; reverse_shipping_fee: number; protection_fund: number; sale_amount: number }[] | null;
 }): ReturnsMoney {
   let amazon: ReturnsMoney["amazon"] = null;
   if (args.refunds.length || args.reimbursementsInPeriod.length) {
@@ -135,11 +139,25 @@ export function computeReturnsMoney(args: {
     reverseLogistics: args.myReverse.reduce((s, r) => s + Math.abs(r.logistics), 0), lines: args.myReverse.length,
   } : null;
 
+  let flipkart: ReturnsMoney["flipkart"] = null;
+  if (args.fkReturns && args.fkReturns.length) {
+    const f = { reversed: 0, rtoReversed: 0, returnReversed: 0, rtoUnits: 0, returnUnits: 0, returnShipping: 0, protection: 0 };
+    for (const r of args.fkReturns) {
+      const taken = Math.max(0, -r.refund);
+      const rto = /logistics/i.test(r.return_type);
+      f.reversed += taken;
+      if (rto) { f.rtoReversed += taken; if (r.refund) f.rtoUnits++; } else { f.returnReversed += taken; if (r.refund) f.returnUnits++; }
+      f.returnShipping += -r.reverse_shipping_fee * 1.18; // Flipkart's fees exclude GST; incl. GST here like the rest of the page
+      f.protection += Math.max(0, r.protection_fund);
+    }
+    flipkart = f;
+  }
+
   return {
-    amazon, firstcry, myntra,
+    amazon, firstcry, myntra, flipkart,
     total: {
-      reversed: (amazon?.refundedToCustomers ?? 0) + (firstcry?.debited ?? 0) + (myntra?.deducted ?? 0),
-      lost: (amazon ? amazon.feesKept + amazon.stockLost : 0) + (myntra?.reverseLogistics ?? 0),
+      reversed: (amazon?.refundedToCustomers ?? 0) + (firstcry?.debited ?? 0) + (myntra?.deducted ?? 0) + (flipkart?.reversed ?? 0),
+      lost: (amazon ? amazon.feesKept + amazon.stockLost : 0) + (myntra?.reverseLogistics ?? 0) + (flipkart ? Math.max(0, flipkart.returnShipping - flipkart.protection) : 0),
       recoverable: (amazon?.claimable ?? 0) + (amazon?.pending ?? 0),
     },
   };

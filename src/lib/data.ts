@@ -240,6 +240,7 @@ async function summarise(account: Account, from: string, to: string, prevFrom: s
         notes: [
           ...(t.estimatedLines ? [`${t.estimatedLines} orders estimated: not in a settlement report yet.`] : []),
           ...(cur.result.ads?.spread ? ["Some ads days come from a monthly product report, spread evenly."] : []),
+          ...(t.offers > t.fees ? [`Fees are below zero: Flipkart-funded offers (₹${Math.round(t.offers).toLocaleString("en-IN")}) exceed its fees (₹${Math.round(t.fees).toLocaleString("en-IN")}).`] : []),
         ],
       },
       extra: [],
@@ -439,6 +440,7 @@ export const getReturnsMoney = cache(async (accounts: Account[], from: string, t
   const amazon = accounts.find((a) => a.marketplace === "Amazon");
   const firstcry = accounts.find((a) => a.marketplace === "FirstCry");
   const myntra = accounts.find((a) => a.marketplace === "Myntra");
+  const flipkart = accounts.find((a) => a.marketplace === "Flipkart");
 
   let refunds: RefundRow[] = [], reimbursementsInPeriod: ReimbRow[] = [];
   const orderFees: FeeRow[] = [], reimbursements: ReimbRow[] = [], amazonReturns: AmzReturnRow[] = [];
@@ -480,7 +482,10 @@ export const getReturnsMoney = cache(async (accounts: Account[], from: string, t
   const fc = firstcry ? await fetchAll<{ rto_total: number; sr_total: number; rto_qty: number; sr_qty: number }>((f, t) => sb.from("sd_fc_recon").select("rto_total, sr_total, rto_qty, sr_qty").eq("account_id", firstcry.id).gte("return_date", from).lte("return_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["rto_total", "sr_total", "rto_qty", "sr_qty"])) : null;
   const myReverse = myntra ? await fetchAll<{ expected_settled: number; logistics: number }>((f, t) => sb.from("sd_my_settlement").select("expected_settled, logistics").eq("account_id", myntra.id).eq("kind", "reverse").gte("order_date", from).lte("order_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["expected_settled", "logistics"])) : null;
 
-  const money = computeReturnsMoney({ refunds, orderFees, reimbursements, reimbursementsInPeriod, amazonReturns, costPerUnit, nameOf, asOf, fc, myReverse });
+  // Flipkart: settlement rows paid in the period that carry a return (sale taken back, return shipping, SPF).
+  const fkReturns = flipkart ? await fetchAll<{ return_type: string; refund: number; reverse_shipping_fee: number; protection_fund: number; sale_amount: number }>((f, t) => sb.from("sd_fk_settlement").select("return_type, refund, reverse_shipping_fee, protection_fund, sale_amount").eq("account_id", flipkart.id).neq("return_type", "").gte("payment_date", from).lte("payment_date", to).order("row_key").range(f, t)).then((r) => numify(r, ["refund", "reverse_shipping_fee", "protection_fund", "sale_amount"])) : null;
+
+  const money = computeReturnsMoney({ refunds, orderFees, reimbursements, reimbursementsInPeriod, amazonReturns, costPerUnit, nameOf, asOf, fc, myReverse, fkReturns });
   const warehouse = amazon ? await getWarehouseClaims(amazon, from, to) : null;
   if (warehouse) {
     money.warehouse = warehouse;

@@ -2,7 +2,8 @@
 // Each marketplace's own engine does the maths; this only lines the results up so they compare fairly:
 //   sales        = net sales excl. GST (Amazon: after refunds and promotions; FirstCry: MRP excl. GST of units kept,
 //                  because FirstCry's files show no customer price)
-//   fees         = what the marketplace keeps (Amazon fees excl. GST; FirstCry: sales − base cost paid)
+//   fees         = what the marketplace keeps (Amazon fees excl. GST; FirstCry: sales − base cost paid; Flipkart: fees
+//                  less the offers Flipkart funds, so it can be negative)
 //   margin       = profit ÷ sales
 /** One product on one marketplace, in the same terms as MarketSummary (sales excl. GST; fees = what the marketplace keeps). */
 export type BrandProduct = {
@@ -60,7 +61,7 @@ export function findings(rows: MarketSummary[], extra: Finding[] = []): Finding[
       if (ch <= -0.15) out.push({ tone: "bad", title: `${r.marketplace} sales down ${pct(-ch, 0)}`, detail: `${lakh(r.sales)} against ${lakh(r.prevSales)} in the previous period of the same length.` });
     }
     if (r.profit < 0) out.push({ tone: "bad", title: `${r.marketplace} is losing money`, detail: `${lakh(r.profit)} after fees${r.ads != null ? ", ads" : ""} and product cost.` });
-    if (r.lossProducts > 0) out.push({ tone: "bad", title: `${r.lossProducts} product${r.lossProducts > 1 ? "s" : ""} lose money on ${r.marketplace}`, detail: `See ${r.marketplace} › Profitability.` });
+    if (r.lossProducts > 0) out.push({ tone: "bad", title: `${r.lossProducts} product${r.lossProducts > 1 ? "s lose" : " loses"} money on ${r.marketplace}`, detail: `See ${r.marketplace} › Profitability.` });
     if (r.returnRate != null && r.returnRate >= 0.08) out.push({ tone: "bad", title: `${pct(r.returnRate)} of ${r.marketplace} units come back`, detail: `Returned units earn nothing and cost shipping both ways.` });
   }
   if (t.adsMissing.length) out.push({ tone: "bad", title: `No ads data for ${t.adsMissing.join(", ")}`, detail: `Profit there is before ad spend, so it is overstated until the ads report is uploaded.` });

@@ -266,7 +266,7 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
   }
 
   // ---------- Returns ----------
-  if ((returns && returns.total) || money?.amazon || money?.warehouse) {
+  if ((returns && returns.total) || money?.amazon || money?.warehouse || money?.flipkart) {
     returns = returns ?? { total: 0, byTheme: [], byMarketplace: [], products: [], actions: [], lines: [] };
     const rt = wb.addWorksheet("Returns", { views: [{ showGridLines: false }] });
     rt.columns = [{ width: 46 }, { width: 22 }, { width: 16 }, { width: 56 }];
@@ -280,6 +280,12 @@ export function buildBrandWorkbook({ clientName, period, prevFrom, prevTo, marke
         ["Recovered from Amazon in these dates", money.amazon?.recovered ?? 0],
         ["To claim from Amazon now", (money.amazon?.claimable ?? 0) + (money.warehouse?.claimable ?? 0)],
         ["To claim from Amazon after the waiting period", (money.amazon?.pending ?? 0) + (money.warehouse?.pending ?? 0)],
+        ...(money.flipkart ? [
+          ["Flipkart: sales taken back on undelivered orders (RTO)", money.flipkart.rtoReversed],
+          ["Flipkart: sales taken back on customer returns", money.flipkart.returnReversed],
+          ["Flipkart: return shipping charged", money.flipkart.returnShipping],
+          ["Flipkart: Seller Protection Fund received", money.flipkart.protection],
+        ] as [string, number][] : []),
         ...(money.warehouse ? [
           ["  of which lost or damaged in Amazon's warehouses (now + later)", money.warehouse.claimable + money.warehouse.pending],
           ["Carrier damage on the way in, to check (not in the totals)", money.warehouse.toCheck],

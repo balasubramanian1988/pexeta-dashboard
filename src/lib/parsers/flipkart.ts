@@ -27,6 +27,8 @@ function clean(v: Cell): string {
 }
 const itemId = (v: Cell) => clean(typeof v === "number" ? String(Math.round(v)) : v).replace(/^OI:/i, "");
 const n = (v: Cell) => num(typeof v === "string" ? v.replace(/["']/g, "") : v);
+/** A GSTIN, or "" for Flipkart's "NA" and other placeholders. */
+const gstin = (v: Cell) => { const s = clean(v).toUpperCase(); return /^\d{2}[A-Z0-9]{13}$/.test(s) ? s : ""; };
 
 /** "2026-10-01 20:42:07", "2026-09-01 00:00:00.0", "2026-10-15", Excel date → YYYY-MM-DD. */
 function day(v: Cell): string | null {
@@ -118,6 +120,9 @@ export function fkSales(t: Table): Parsed {
       seller_share: n(col(r, "seller share")), bank_offer_share: n(col(r, "bank offer share")),
       invoice_amount: n(col(r, "final invoice amount")), taxable_value: taxable, gst_rate: gstRate,
       gst_amount: n(col(r, "igst amount")) + n(col(r, "cgst amount")) + n(col(r, "sgst amount")),
+      igst: n(col(r, "igst amount")), cgst: n(col(r, "cgst amount")), sgst: n(col(r, "sgst amount")),
+      seller_gstin: clean(col(r, "seller gstin")).toUpperCase(), buyer_gstin: gstin(col(r, "business gst number")),
+      hsn: clean(col(r, "hsn code")), shipped_from: clean(col(r, "order shipped from (state)")),
       tcs: n(col(r, "total tcs deducted")), tds: n(col(r, "tds amount")),
       delivery_state: clean(col(r, "customer's delivery state")), shopsy: /^y/i.test(clean(col(r, "is shopsy order?"))),
     });

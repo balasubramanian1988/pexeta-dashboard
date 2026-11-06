@@ -865,8 +865,15 @@ create table if not exists sd_fk_sales (
   taxable_value numeric not null default 0,    -- excl. GST; negative on returns and cancellations
   gst_rate numeric not null default 0,
   gst_amount numeric not null default 0,
+  igst numeric not null default 0,
+  cgst numeric not null default 0,
+  sgst numeric not null default 0,
+  seller_gstin text not null default '',     -- your GST registration that invoiced the sale
+  buyer_gstin text not null default '',      -- set for B2B sales (Flipkart's "Business GST Number")
+  hsn text not null default '',
+  shipped_from text not null default '',     -- state the order shipped from, e.g. IN-TN
   tcs numeric not null default 0,
-  tds numeric not null default 0,
+  tds numeric not null default 0,               -- Flipkart shows TDS as positive on returns too
   delivery_state text not null default '',
   shopsy boolean not null default false,
   primary key (account_id, row_key)

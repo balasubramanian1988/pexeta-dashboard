@@ -15,6 +15,7 @@ const DROPSHIP_TABS = [
   { slug: "revenue", label: "Orders & returns", icon: BarChart3 },
   { slug: "payments", label: "Payments", icon: Wallet },
   { slug: "ads", label: "Ads", icon: Megaphone, only: ["FirstCry", "Flipkart"] },
+  { slug: "gst", label: "GST & documents", icon: FileText, only: ["Flipkart"] },
   { slug: "stock", label: "45-day stock plan", icon: Boxes },
   { slug: "costs", label: "Product costs", icon: Tags },
 ];

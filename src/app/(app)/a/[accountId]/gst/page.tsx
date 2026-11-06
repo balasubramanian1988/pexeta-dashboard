@@ -6,15 +6,17 @@ import { dateLabel, monthLabel, rupees } from "@/lib/format";
 import { gstMonth, gstMonths } from "@/lib/gst";
 import { REPORT_LABEL, type ReportType } from "@/lib/parsers";
 import { notFound } from "next/navigation";
+import FkGst from "../_flipkart/Gst";
 
 export const metadata = { title: "GST & documents" };
 
 export default async function GstPage({ params, searchParams }: { params: Promise<{ accountId: string }>; searchParams: Promise<{ month?: string }> }) {
   const { accountId } = await params;
   const [viewer, account] = await Promise.all([getViewer(), getAccount(accountId)]);
-  if (["FirstCry", "Myntra", "Flipkart"].includes(account.marketplace)) notFound(); // FirstCry has no ads or GST document reports here yet
-  const months = await gstMonths(account.id);
+  if (["FirstCry", "Myntra"].includes(account.marketplace)) notFound(); // no GST reports read for these yet
   const sp = await searchParams;
+  if (account.marketplace === "Flipkart") return <FkGst account={account} team={viewer.kind === "team"} month={sp.month} />;
+  const months = await gstMonths(account.id);
   const month = sp.month && /^\d{4}-\d{2}$/.test(sp.month) && months.includes(`${sp.month}-01`) ? `${sp.month}-01` : months[0];
   const base = `/a/${account.id}/gst`;
   const fileHref = (path: string) => `/api/a/${account.id}/files?path=${encodeURIComponent(path)}`;

@@ -33,7 +33,7 @@ export default async function ReturnsPage({ params, searchParams }: { params: Pr
         sub={<><PeriodNote from={period.from} to={period.to} />. Every returned or undelivered unit, put into one theme from the marketplace&apos;s reason and the customer&apos;s own words.</>}
         action={<PeriodPicker period={period} basePath={`/b/${clientId}/returns`} />} />
 
-      {(a || w || money.firstcry || money.myntra) && (
+      {(a || w || money.firstcry || money.myntra || money.flipkart) && (
         <>
           <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
             <Kpi label="Sales reversed by returns" value={compactRupees(money.total.reversed)} sub="Refunds, debit notes and return deductions" />
@@ -49,10 +49,11 @@ export default async function ReturnsPage({ params, searchParams }: { params: Pr
               <tbody>
                 {a && <tr><td className="font-medium">Amazon</td><td className="num">{rupees(a.refundedToCustomers)}<div className="text-[11px] text-faint">{count(a.refunds)} refunds</div></td><td className="num">{rupees(a.feesKept)}</td><td className="num text-faint">–</td><td className="num">{rupees(a.stockLost)}<div className="text-[11px] text-faint">{count(a.stockLostUnits)} units</div></td><td className="num text-emerald-700">{rupees(a.recovered)}</td><td className="num font-semibold text-emerald-700">{rupees(a.claimable + a.pending)}</td></tr>}
                 {money.firstcry && <tr><td className="font-medium">FirstCry</td><td className="num">{rupees(money.firstcry.debited)}<div className="text-[11px] text-faint">RTO {rupees(money.firstcry.rtoDebited)} · returns {rupees(money.firstcry.returnDebited)}</div></td><td className="num text-faint">–</td><td className="num text-faint">–</td><td className="num text-faint">–</td><td className="num text-faint">–</td><td className="num text-faint">–</td></tr>}
+                {money.flipkart && <tr><td className="font-medium">Flipkart</td><td className="num">{rupees(money.flipkart.reversed)}<div className="text-[11px] text-faint">RTO {rupees(money.flipkart.rtoReversed)} ({count(money.flipkart.rtoUnits)}) · returns {rupees(money.flipkart.returnReversed)} ({count(money.flipkart.returnUnits)})</div></td><td className="num text-faint">–</td><td className="num">{rupees(money.flipkart.returnShipping)}</td><td className="num text-faint">–</td><td className={`num ${money.flipkart.protection ? "text-emerald-700" : "text-faint"}`}>{money.flipkart.protection ? rupees(money.flipkart.protection) : "–"}</td><td className="num text-faint">–</td></tr>}
                 {money.myntra && <tr><td className="font-medium">Myntra</td><td className="num">{rupees(money.myntra.deducted)}</td><td className="num text-faint">–</td><td className="num">{rupees(money.myntra.reverseLogistics)}</td><td className="num text-faint">–</td><td className="num text-faint">–</td><td className="num text-faint">–</td></tr>}
               </tbody>
             </table></div>
-            <p className="border-t border-line px-4 py-2.5 text-xs text-muted">FirstCry and Myntra take back their payout on returned units by debit note or deduction; reimbursement claims apply to Amazon FBA. Stock written off uses each product&apos;s cost from Product costs, or the default %.</p>
+            <p className="border-t border-line px-4 py-2.5 text-xs text-muted">FirstCry, Myntra and Flipkart take back their payout on returned units by debit note or deduction; reimbursement claims apply to Amazon FBA. Flipkart is by payout date; its &quot;Recovered&quot; is Seller Protection Fund payments for damaged or lost returns. Stock written off uses each product&apos;s cost from Product costs, or the default %.</p>
           </Section>
 
           {a && a.claims.length > 0 && (
@@ -148,7 +149,7 @@ export default async function ReturnsPage({ params, searchParams }: { params: Pr
             </div>
           </Section>
 
-          <Section title="By product" sub="Most returned first, with what customers wrote (Amazon collects comments; FirstCry and Myntra give a reason only).">
+          <Section title="By product" sub="Most returned first, with what customers wrote (Amazon collects comments; FirstCry, Myntra and Flipkart give a reason only).">
             <div className="overflow-x-auto">
               <table className="tbl">
                 <thead><tr><th>Product</th><th>Marketplace</th><th className="num">Units</th><th>Main reasons</th><th className="w-2/5">Customers said</th></tr></thead>

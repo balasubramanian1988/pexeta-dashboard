@@ -66,6 +66,8 @@ Per order item the settlement report shows: sale amount (what the customer paid)
 - Profit = revenue − fees − product cost − ads (Flipkart Ads spend, excl. GST: campaign-by-day report for totals, product report for the split by product).
 - The settlement file stores item ids as rounded numbers, so its rows are matched to orders by order id + SKU.
 - Orders not yet in a settlement report are estimated: price before discount + the seller's share of the discount, and the fee rate of the latest settled 30 days.
+- GST tab: from the Sales report, by invoice / credit note date: sales, returns, GST, TCS and TDS by GSTIN, by state of delivery and rate, and by HSN; Flipkart's fee invoices for input credit; one ZIP per month for the auditor.
+- Returns in rupees: settlement rows with a return, by payout date: sales taken back (RTO and customer returns), return shipping incl. GST, Seller Protection Fund received.
 
 | Report | How often | Range |
 | --- | --- | --- |
